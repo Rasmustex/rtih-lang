@@ -1,11 +1,22 @@
-#include <bits/types.h>
+/*
+ * Very simple toy programming language. It is stack based and will probably
+only have an interpreted version
+ * TODO: Add error printing and -handling
+ * TODO: File reading
+ * TODO: Tokeniser and parser for program reading
+ * TODO: More operations
+ * TODO: Data types
+ * TODO: Pointers
+ * TODO: Strings
+ * TODO: Tidy into multiple files
+ * TODO: Functions/procedures, probably using goto, call and ret
+ */
+
+#include <stdint.h>
 #include <stdio.h>
 #include <assert.h>
 #include <stdlib.h>
 #include <ctype.h>
-
-#define POP_SIM *--sp
-#define PUSH_SIM(x) *sp++ = x
 
 enum OP {
     OP_PUSH,
@@ -60,11 +71,11 @@ int sim( struct command *program ) {
 }
 
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, int args[10] ) ) {
-    op[OP_PUSH] = push;
-    op[OP_PLUS] = plus;
+    op[OP_PUSH]  = push;
+    op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
-    op[OP_DUMP] = dump;
-    op[OP_EXIT] = exit_program;
+    op[OP_DUMP]  = dump;
+    op[OP_EXIT]  = exit_program;
 }
 
 struct command push_op( int x ) {
@@ -109,34 +120,39 @@ struct command exit_program_op( int exit_code ) {
     return com;
 }
 
-__uint64_t stack[10000];
-__uint64_t *sp = stack;
+#define STACK_SIZE 10000
 
-void push( int argc, int args[] ) {
+uint64_t stack[STACK_SIZE];
+uint64_t *sp = stack;
+
+#define POP_SIM *--sp
+#define PUSH_SIM(x) *sp++ = x
+
+inline void push( int argc, int args[] ) {
     PUSH_SIM(args[0]);
     return;
 }
 
-void plus() {
-    __uint64_t temp = POP_SIM;
+inline void plus() {
+    register uint64_t temp = POP_SIM;
     temp += POP_SIM;
     PUSH_SIM(temp);
     return;
 }
 
-void minus() {
-    __uint64_t temp = POP_SIM;
+inline void minus() {
+    register uint64_t temp = POP_SIM;
     temp = POP_SIM - temp;
     PUSH_SIM(temp);
     return;
 }
 
-void dump() {
+inline void dump() {
     printf( "%lu\n", POP_SIM );
     return;
 }
 
-void exit_program( int argc, int args[10] ) {
+inline void exit_program( int argc, int args[10] ) {
     exit(args[0]);
     return;
 }
