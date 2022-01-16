@@ -2,8 +2,9 @@
  * Very simple toy programming language. It is stack based and will probably
 only have an interpreted version
  * TODO: Add error printing and -handling
- * TODO: File reading
- * TODO: Tokeniser and parser for program reading
+ * TODO: Infinite program length
+ * TODO: Tidy op args
+ * TODO: Arg handling in main
  * TODO: More operations
  * TODO: Data types
  * TODO: Pointers
@@ -42,17 +43,16 @@ struct command {
 
 int sim( struct command *program );
 
-struct command push_op( int x );
-struct command plus_op( void );
-struct command minus_op( void );
-struct command dump_op( void );
-struct command exit_program_op( int exit_code );
-
 struct command *read_program_from_file( const char *fname );
+void print_help();
 
 int main( int argc, const char **argv ) {
-    //struct command program[] = { push_op(10), push_op(35), plus_op(), dump_op(), push_op(400), push_op(40), minus_op(), dump_op(), exit_program_op(0) };
-    struct command *program = read_program_from_file( "test.p" );
+    if( argc < 2 ) {
+        print_help();
+        printf( "Error: no file name specified" );
+        exit(1);
+    }
+    struct command *program = read_program_from_file( argv[1] );
     sim( program );
     free( program );
     return 0;
@@ -122,11 +122,10 @@ struct command dump_op( void ) {
     return com;
 }
 
-struct command exit_program_op( int exit_code ) {
+struct command exit_program_op() {
     struct command com = {
         .op = OP_EXIT,
-        .args = { exit_code },
-        .argc = 1
+        .argc = 0
     };
     return com;
 }
@@ -164,7 +163,7 @@ inline void dump() {
 }
 
 inline void exit_program( int argc, int args[10] ) {
-    exit(args[0]);
+    exit(POP_SIM);
     return;
 }
 
@@ -172,7 +171,7 @@ inline void exit_program( int argc, int args[10] ) {
 
 struct command *read_program_from_file( const char *fname ) {
     FILE* f = fopen( fname, "r" );
-    int proglen = 1000;
+    int proglen = 10000;
     TOK_TYPE tt;
     char tok[MAXTOK];
     char *p = tok;
@@ -208,7 +207,7 @@ struct command *read_program_from_file( const char *fname ) {
             break;
         case NAME:
             if ( !strcmp( tok, "exit" ) ) {
-                *pp = exit_program_op( 0 );
+                *pp = exit_program_op();
             }
             break;
         default:
@@ -228,4 +227,10 @@ struct command *read_program_from_file( const char *fname ) {
     }
     fclose( f );
     return prog;
+}
+
+void print_help() {
+    printf("Usage: plang [ARGS]\n");
+    printf("    plang <filename>\truns the given file with the plang interpreter\n");
+    return;
 }
