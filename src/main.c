@@ -170,10 +170,20 @@ inline void exit_program() {
 }
 
 #define MAXTOK 100
+#define MAXLINE 1000
+
+char* fgetline( FILE *f, char* buf ) {
+    register uint64_t n;
+    register char c;
+    for( n = 0; (c = fgetc( f )) != '\n' && c != EOF; n++ )
+        buf[n] = c;
+    buf[n + 1] = '\0';
+    return buf;
+}
 
 struct command *read_program_from_file( const char *fname ) {
     uint64_t temp;
-    FILE* f;
+    FILE *f;
     if( !access( fname, F_OK ) ) {
         f = fopen( fname, "r" ); // Open the requested file
     } else {
@@ -191,10 +201,14 @@ struct command *read_program_from_file( const char *fname ) {
     }
     struct command *pp = prog;
 
+    /* char line[MAXLINE]; */
+    /* uint64_t lineno; // Keeps track of the line of tokens */
+
     while( 1 ) {
         p = tok; // Reset p to the start of token string
 
         /* TODO: Separate tokenizer to separate function - also make prettier. */
+        // TODO: Operating on lines
         while( (c = fgetc( f )) == ' ' || c == '\t' || c == '\n' )
             ;
         if( c == EOF )
