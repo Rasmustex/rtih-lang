@@ -33,12 +33,13 @@ enum OP {
 typedef enum {
     NUM,
     NAME,
-    OP
+    OP,
+    COMMENT
 } TOK_TYPE;
 
 struct command {
     enum OP op;
-    int args[10];
+    uint64_t args[10];
     int argc;
 };
 
@@ -63,15 +64,15 @@ int main( int argc, const char **argv ) {
  * ============================================================ simulation mode
  */
 
-void sim_setup_function_array( void (*op[NUM_OPS])( int argc, int args[10] ) );
-void push( int argc, int args[10] );
+void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) );
+void push( int argc, uint64_t args[10] );
 void plus();
 void minus();
 void dump();
 void exit_program();
 
 int sim( struct command *program ) {
-    void (*op[NUM_OPS])( int argc, int args[10] );
+    void (*op[NUM_OPS])( int argc, uint64_t args[10] );
     sim_setup_function_array( op );
     //assert(!"Simulation mode not yet implemented");
     assert(NUM_OPS == 5 && "Unhandled operations in simulation mode");
@@ -82,7 +83,7 @@ int sim( struct command *program ) {
     return 0;
 }
 
-void sim_setup_function_array( void (*op[NUM_OPS])( int argc, int args[10] ) ) {
+void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
@@ -133,13 +134,13 @@ struct command exit_program_op() {
 
 #define STACK_SIZE 10000
 
-uint64_t stack[STACK_SIZE];
+uint64_t stack[STACK_SIZE] = {0};
 uint64_t *sp = stack;
 
 #define POP_SIM *--sp
 #define PUSH_SIM(x) *sp++ = x
 
-inline void push( int argc, int args[] ) {
+inline void push( int argc, uint64_t args[] ) {
     PUSH_SIM(args[0]);
     return;
 }
@@ -196,7 +197,7 @@ struct command *read_program_from_file( const char *fname ) {
         /* TODO: Separate tokenizer to separate function - also make prettier. */
         while( (c = fgetc( f )) == ' ' || c == '\t' || c == '\n' )
             ;
-        if( feof( f ) )
+        if( c == EOF )
             break;
         // Does token start with an alphabetic character? Then it must be a name
         if( isalpha( c ) ) {
@@ -209,13 +210,17 @@ struct command *read_program_from_file( const char *fname ) {
                 *p++ = c; // copy token to toke
             } while( isdigit( c = fgetc( f ) ) );
             tt = NUM;
+        } else if ( c == '#' ) { // We've found a comment. Skip to the next line
+            while( (c = fgetc( f )) != '\n' && c != EOF )
+                ;
+            tt = COMMENT;
         } else { // Otherwise it must be an operator. This will probably change in the future
             tt = OP;
         }
         *p = '\0'; // Null-terminate tok
         switch( tt ) {
         case NUM: // If number, push
-            *pp = push_op( atol(tok));
+            *pp = push_op( atol(tok) );
             break;
         case NAME: // if name, check if exit, and then exit. Other names yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
@@ -224,6 +229,8 @@ struct command *read_program_from_file( const char *fname ) {
                 printf( "Error: name %s not recognised, and custom names not implemented\n", tok );
                 exit(1);
             }
+            break;
+        case COMMENT:
             break;
         default:
             switch( c ) { // checks what was put into c
@@ -242,7 +249,9 @@ struct command *read_program_from_file( const char *fname ) {
             }
             break;
         }
-        pp++;
+
+        if( tt != COMMENT ) // if it was a comment, no operation was assigned to the program pointer, so it shouldn't be incremented
+            pp++;
 
         if( !(pp - prog < proglen - 1) ) { // reallocate more memory for the program array if we run out - keep a buffer so we can always add the exit op at the end if the user hasn't
             temp = pp - prog;
@@ -250,7 +259,7 @@ struct command *read_program_from_file( const char *fname ) {
                 printf( "Error: program memory reallocation failed\n" );
                 exit(1);
             }
-            pp = prog + temp; // reset pp to the same position even if the array has moved in memory
+            pp = prog + temp; // reset pp to the same position in case the array has moved in memory
         }
     }
     fclose( f );
