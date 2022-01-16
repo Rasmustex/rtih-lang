@@ -17,6 +17,7 @@ only have an interpreted version
 #include <assert.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <string.h>
 
 enum OP {
     OP_PUSH,
@@ -26,6 +27,12 @@ enum OP {
     OP_EXIT,
     NUM_OPS
 };
+
+typedef enum {
+    NUM,
+    NAME,
+    OP
+} TOK_TYPE;
 
 struct command {
     enum OP op;
@@ -41,9 +48,13 @@ struct command minus_op( void );
 struct command dump_op( void );
 struct command exit_program_op( int exit_code );
 
-int main( int argc, const char** argv ) {
-    struct command program[] = { push_op(10), push_op(35), plus_op(), dump_op(), push_op(400), push_op(40), minus_op(), dump_op(), exit_program_op(0) };
+struct command *read_program_from_file( const char *fname );
+
+int main( int argc, const char **argv ) {
+    //struct command program[] = { push_op(10), push_op(35), plus_op(), dump_op(), push_op(400), push_op(40), minus_op(), dump_op(), exit_program_op(0) };
+    struct command *program = read_program_from_file( "test.p" );
     sim( program );
+    free( program );
     return 0;
 }
 
@@ -155,4 +166,66 @@ inline void dump() {
 inline void exit_program( int argc, int args[10] ) {
     exit(args[0]);
     return;
+}
+
+#define MAXTOK 100
+
+struct command *read_program_from_file( const char *fname ) {
+    FILE* f = fopen( fname, "r" );
+    int proglen = 1000;
+    TOK_TYPE tt;
+    char tok[MAXTOK];
+    char *p = tok;
+    char c;
+    struct command *prog = malloc( proglen * sizeof( struct command ) );
+    struct command *pp = prog;
+
+    while( !feof( f ) ) {
+        p = tok;
+        assert( pp - prog < proglen );
+        // feof(f)
+        while( (c = fgetc( f )) == ' ' || c == '\t' || c == '\n' )
+            ;
+        if( feof( f ) )
+            break;
+        if( isalpha( c ) ) {
+            do {
+                *p++ = c;
+            } while( isalpha( c = fgetc(f) ) );
+            tt = NAME;
+        } else if( isdigit(c) ) {
+            do {
+                *p++ = c;
+            } while( isdigit( c = fgetc( f ) )) ;
+            tt = NUM;
+        } else {
+            tt = OP;
+        }
+        *p = '\0';
+        switch( tt ) {
+        case NUM:
+            *pp = push_op( atol(tok));
+            break;
+        case NAME:
+            if ( !strcmp( tok, "exit" ) ) {
+                *pp = exit_program_op( 0 );
+            }
+            break;
+        default:
+            switch( c ) {
+            case '+':
+                *pp = plus_op();
+                break;
+            case '-':
+                *pp = minus_op();
+                break;
+            case '.':
+                *pp = dump_op();
+            }
+            break;
+        }
+        pp++;
+    }
+    fclose( f );
+    return prog;
 }
