@@ -262,7 +262,7 @@ struct command *read_program_from_file( const char *fname ) {
 }
 
 void print_help( const char* progname ) {
-    printf( "Usage: plang [ARGS]\n" );
+    printf( "Usage: %s [ARGS]\n", progname );
     printf( "    %s <filename>\truns the given file with the plang interpreter\n", progname );
     return;
 }
