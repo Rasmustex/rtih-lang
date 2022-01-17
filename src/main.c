@@ -249,16 +249,16 @@ enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount ) {
 
     // Does token start with an alphabetic character? Then it must be a name
     if( isalpha( c ) ) {
-        do {
-            *p++ = c; // copy token to tok
-        } while( isalnum( c = fgetc(f) ) && p - tok < MAXTOK - 1 ); // Names are allowed to contain numbers
+        for( *p++ = c; isalnum( c = fgetc( f ) ) && p - tok < MAXTOK - 1; ) // copy c to tok as long as c is alphanumeric and we haven't exceeded max length
+            *p++ = c;
+
         *p = '\0'; // null-termination
         ungetc( c, f );
         return tt = NAME;
     } else if( isdigit(c) ) { // If c is a digit, it must be part of a number that should be pushed to the stack
-        do {
-            *p++ = c; // copy token to toke
-        } while( isdigit( c = fgetc( f ) ) && p - tok < MAXTOK - 1 );
+        for( *p++ = c; isdigit( c = fgetc( f ) ) && p - tok < MAXTOK - 1; )
+            *p++ = c;
+
         *p = '\0';
         ungetc( c, f );
         return tt = NUM;
