@@ -1,10 +1,8 @@
 /*
  * Very simple toy programming language. It is stack based and will probably
 only have an interpreted version
- * TODO: Add error printing and -handling
- * TODO: Infinite program length
+ * TODO: Better error printing and -handling
  * TODO: Tidy op args
- * TODO: Arg handling in main
  * TODO: More operations
  * TODO: Data types
  * TODO: Pointers
@@ -30,12 +28,12 @@ enum OP {
     NUM_OPS
 };
 
-typedef enum {
+enum TOK_TYPE {
     NUM,
     NAME,
     OP,
     COMMENT
-} TOK_TYPE;
+};
 
 struct command {
     enum OP op;
@@ -74,7 +72,6 @@ void exit_program();
 int sim( struct command *program ) {
     void (*op[NUM_OPS])( int argc, uint64_t args[10] );
     sim_setup_function_array( op );
-    //assert(!"Simulation mode not yet implemented");
     assert(NUM_OPS == 5 && "Unhandled operations in simulation mode");
     while( 1 ) {
         op[program->op]( program->argc, program->args );
@@ -171,8 +168,19 @@ inline void exit_program() {
 
 #define MAXTOK 100
 
+int tt; // The type of token that the tokenizer has processed
+
 struct command *read_program_from_file( const char *fname ) {
-    uint64_t temp;
+    enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount );
+    char tok[MAXTOK]; // Holds the found token
+
+    size_t proglen = 10000; // Initial length of operation array
+    struct command *prog = (struct command*)malloc( proglen * sizeof( struct command ) ); // array of the commands that the program will execute
+    if( !prog ) {
+        printf( "Error: failed to allocate memory for program\n" );
+    }
+    struct command *pp = prog;
+
     FILE *f;
     if( !access( fname, F_OK ) ) {
         f = fopen( fname, "r" ); // Open the requested file
@@ -180,59 +188,27 @@ struct command *read_program_from_file( const char *fname ) {
         printf( "Error: could not access file %s\n", fname );
         exit(1);
     }
-    size_t proglen = 10000; // Initial length of operation array
-    TOK_TYPE tt; // The type of token that the tokenizer is processing
-    char tok[MAXTOK]; // Holds the found token
-    char *p = tok;
-    register char c;
-    struct command *prog = (struct command*)malloc( proglen * sizeof( struct command ) ); // array of the commands that the program will execute
-    if( !prog ) {
-        printf( "Error: failed to allocate memory for program\n" );
-    }
-    struct command *pp = prog;
 
-    /* char line[MAXLINE]; */
-    register uint64_t lineno = 1; // Keeps track of the line of tokens
+    uint64_t lineno = 1; // Keeps track of the line of tokens
+    uint64_t temp; // temporarily holds position of pp relative to prog
 
-    while( 1 ) {
-        p = tok; // Reset p to the start of token string
-
-        /* TODO: Separate tokenizer to separate function - also make prettier. */
-        // TODO: Operating on lines
-        while( (c = fgetc( f )) == ' ' || c == '\t' || c == '\n' )
-            if( c == '\n' )
-                ++lineno;
-
-        if( c == EOF )
-            break;
-        // Does token start with an alphabetic character? Then it must be a name
-        if( isalpha( c ) ) {
-            do {
-                *p++ = c; // copy token to tok
-            } while( isalnum( c = fgetc(f) ) ); // Names are allowed to contain numbers
-            tt = NAME;
-        } else if( isdigit(c) ) { // If c is a digit, it must be part of a number that should be pushed to the stack
-            do {
-                *p++ = c; // copy token to toke
-            } while( isdigit( c = fgetc( f ) ) );
-            tt = NUM;
-        } else if ( c == '#' ) { // We've found a comment. Skip to the next line
-            while( (c = fgetc( f )) != '\n' && c != EOF )
-                ;
-            if( c == '\n' )
-                ++lineno;
-            tt = COMMENT;
-        } else { // Otherwise it must be an operator. This will probably change in the future
-            tt = OP;
-        }
-        *p = '\0'; // Null-terminate tok
+    while( tokenize( f, tok, &lineno ) != EOF ) {
         switch( tt ) {
         case NUM: // If number, push
-            *pp = push_op( atol(tok) );
+            *pp++ = push_op( atol(tok) );
+            break;
+        case '+':
+            *pp++ = plus_op();
+            break;
+        case '-':
+            *pp++ = minus_op();
+            break;
+        case '.':
+            *pp++ = dump_op();
             break;
         case NAME: // if name, check if exit, and then exit. Other names yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
-                *pp = exit_program_op();
+                *pp++ = exit_program_op();
             } else {
                 printf( "%s:%lu: Error: name %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
@@ -241,25 +217,10 @@ struct command *read_program_from_file( const char *fname ) {
         case COMMENT:
             break;
         default:
-            switch( c ) { // checks what was put into c
-            case '+':
-                *pp = plus_op();
-                break;
-            case '-':
-                *pp = minus_op();
-                break;
-            case '.':
-                *pp = dump_op();
-                break;
-            default:
-                printf( "%s:%lu: Error: token %s is not recognised\n", fname, lineno, tok );
-                exit(1);
-            }
+            printf( "%s:%lu: Error: token %s is not recognised\n", fname, lineno, tok );
+            exit(1);
             break;
         }
-
-        if( tt != COMMENT ) // if it was a comment, no operation was assigned to the program pointer, so it shouldn't be incremented
-            pp++;
 
         if( !(pp - prog < proglen - 1) ) { // reallocate more memory for the program array if we run out - keep a buffer so we can always add the exit op at the end if the user hasn't
             temp = pp - prog;
@@ -276,6 +237,42 @@ struct command *read_program_from_file( const char *fname ) {
         *pp = exit_program_op();
     } // if there is no exit statement in the program, we just add one ourselves at the end
     return prog;
+}
+
+enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount ) {
+    char *p = tok;
+    register char c;
+    // TODO: Operating on lines - would let us ignore comments
+    while( (c = fgetc( f )) == ' ' || c == '\t' || c == '\n' )
+        if( c == '\n' )
+            ++*linecount;
+
+    // Does token start with an alphabetic character? Then it must be a name
+    if( isalpha( c ) ) {
+        do {
+            *p++ = c; // copy token to tok
+        } while( isalnum( c = fgetc(f) ) && p - tok < MAXTOK - 1 ); // Names are allowed to contain numbers
+        *p = '\0'; // null-termination
+        ungetc( c, f );
+        return tt = NAME;
+    } else if( isdigit(c) ) { // If c is a digit, it must be part of a number that should be pushed to the stack
+        do {
+            *p++ = c; // copy token to toke
+        } while( isdigit( c = fgetc( f ) ) && p - tok < MAXTOK - 1 );
+        *p = '\0';
+        ungetc( c, f );
+        return tt = NUM;
+    } else if ( c == '#' ) { // We've found a comment. Skip to the next line
+        while( (c = fgetc( f )) != '\n' && c != EOF )
+            ;
+        if( c == '\n' )
+            ++*linecount;
+        return tt = COMMENT;
+    } else {
+        *p++ = c;
+        *p = '\0';
+        return tt = c;
+    }
 }
 
 void print_help( const char* progname ) {
