@@ -170,16 +170,6 @@ inline void exit_program() {
 }
 
 #define MAXTOK 100
-#define MAXLINE 1000
-
-char* fgetline( FILE *f, char* buf ) {
-    register uint64_t n;
-    register char c;
-    for( n = 0; (c = fgetc( f )) != '\n' && c != EOF; n++ )
-        buf[n] = c;
-    buf[n + 1] = '\0';
-    return buf;
-}
 
 struct command *read_program_from_file( const char *fname ) {
     uint64_t temp;
@@ -202,7 +192,7 @@ struct command *read_program_from_file( const char *fname ) {
     struct command *pp = prog;
 
     /* char line[MAXLINE]; */
-    /* uint64_t lineno; // Keeps track of the line of tokens */
+    register uint64_t lineno = 1; // Keeps track of the line of tokens
 
     while( 1 ) {
         p = tok; // Reset p to the start of token string
@@ -210,7 +200,9 @@ struct command *read_program_from_file( const char *fname ) {
         /* TODO: Separate tokenizer to separate function - also make prettier. */
         // TODO: Operating on lines
         while( (c = fgetc( f )) == ' ' || c == '\t' || c == '\n' )
-            ;
+            if( c == '\n' )
+                ++lineno;
+
         if( c == EOF )
             break;
         // Does token start with an alphabetic character? Then it must be a name
@@ -227,6 +219,8 @@ struct command *read_program_from_file( const char *fname ) {
         } else if ( c == '#' ) { // We've found a comment. Skip to the next line
             while( (c = fgetc( f )) != '\n' && c != EOF )
                 ;
+            if( c == '\n' )
+                ++lineno;
             tt = COMMENT;
         } else { // Otherwise it must be an operator. This will probably change in the future
             tt = OP;
@@ -240,7 +234,7 @@ struct command *read_program_from_file( const char *fname ) {
             if ( !strcmp( tok, "exit" ) ) {
                 *pp = exit_program_op();
             } else {
-                printf( "Error: name %s not recognised, and custom names not implemented\n", tok );
+                printf( "%s:%lu: Error: name %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
             }
             break;
@@ -258,7 +252,7 @@ struct command *read_program_from_file( const char *fname ) {
                 *pp = dump_op();
                 break;
             default:
-                printf( "Token %s is not recognised\n", tok );
+                printf( "%s:%lu: Error: token %s is not recognised\n", fname, lineno, tok );
                 exit(1);
             }
             break;
