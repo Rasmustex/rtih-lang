@@ -17,6 +17,7 @@ only have an interpreted version
 #include <assert.h>
 #include <stdlib.h>
 #include <ctype.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <string.h>
 
@@ -27,6 +28,7 @@ enum OP {
     OP_DUMP,
     OP_EXIT,
     OP_EQ,
+    OP_DUP,
     NUM_OPS
 };
 
@@ -69,7 +71,7 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
 int sim( struct command *program ) {
     void (*op[NUM_OPS])( int argc, uint64_t args[10] );
     sim_setup_function_array( op );
-    assert(NUM_OPS == 6 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 7 && "Unhandled operations in simulation mode");
     while( 1 ) {
         op[program->op]( program->argc, program->args );
         ++program;
@@ -83,6 +85,7 @@ void minus();
 void dump();
 void exit_program();
 void eq();
+void dup_stack();
 
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
     op[OP_PUSH]  = push;
@@ -91,6 +94,7 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_DUMP]  = dump;
     op[OP_EXIT]  = exit_program;
     op[OP_EQ]    = eq;
+    op[OP_DUP]   = dup_stack;
 }
 
 struct command push_op( int x ) {
@@ -142,6 +146,14 @@ struct command eq_op() {
     return com;
 }
 
+struct command dup_stack_op() {
+    struct command com = {
+        .op = OP_DUP,
+        .argc = 0
+    };
+    return com;
+}
+
 #define STACK_SIZE 10000
 
 uint64_t stack[STACK_SIZE] = {0};
@@ -183,6 +195,12 @@ inline void eq() {
     register uint64_t temp = POP_SIM;
     temp = ( temp == POP_SIM );
     PUSH_SIM(temp);
+    return;
+}
+
+inline void dup_stack() {
+    register uint64_t temp = *(sp - 1);
+    *sp++ = temp;
     return;
 }
 
@@ -232,6 +250,8 @@ struct command *read_program_from_file( const char *fname ) {
         case WORD: // if name, check if exit, and then exit. Other names yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
                 *pp++ = exit_program_op();
+            } else if( !strcmp( tok, "dup" ) ) {
+                *pp++ = dup_stack_op();
             } else {
                 printf( "%s:%lu: Error: word %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
