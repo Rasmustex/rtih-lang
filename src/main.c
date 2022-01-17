@@ -41,8 +41,8 @@ enum TOK_TYPE {
 
 struct command {
     enum OP op;
-    uint64_t args[10];
     int argc;
+    uint64_t args[10];
 };
 
 int sim( struct command *program );
@@ -97,62 +97,23 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_DUP]   = dup_stack;
 }
 
-struct command push_op( int x ) {
+struct command make_op( enum OP op, int argc, int *args ) {
     struct command com = {
-        .op = OP_PUSH,
-        .args = { x },
-        .argc = 1
+        .op = op,
+        .argc = argc
     };
+    for( uint8_t i = 0; i < argc ; i++ )
+        com.args[i] = args[i];
     return com;
 }
 
-struct command plus_op( void ) {
-    struct command com = {
-        .op = OP_PLUS,
-        .argc = 0
-    };
-    return com;
-}
-
-struct command minus_op( void ) {
-    struct command com = {
-        .op = OP_MINUS,
-        .argc = 0
-    };
-    return com;
-}
-
-struct command dump_op( void ) {
-    struct command com = {
-        .op = OP_DUMP,
-        .argc = 0
-    };
-    return com;
-}
-
-struct command exit_program_op() {
-    struct command com = {
-        .op = OP_EXIT,
-        .argc = 0
-    };
-    return com;
-}
-
-struct command eq_op() {
-    struct command com = {
-        .op = OP_EQ,
-        .argc = 0
-    };
-    return com;
-}
-
-struct command dup_stack_op() {
-    struct command com = {
-        .op = OP_DUP,
-        .argc = 0
-    };
-    return com;
-}
+struct command push_op( int x )        { return make_op( OP_PUSH, 1, &x ); }
+struct command plus_op( void )         { return make_op( OP_PLUS, 0, NULL ); }
+struct command minus_op( void )        { return make_op( OP_MINUS, 0, NULL ); }
+struct command dump_op( void )         { return make_op( OP_DUMP, 0, NULL ); }
+struct command exit_program_op( void ) { return make_op( OP_EXIT, 0, NULL ); }
+struct command eq_op( void )           { return make_op( OP_EQ, 0, NULL ); }
+struct command dup_stack_op( void )    { return make_op( OP_DUP, 0, NULL ); }
 
 #define STACK_SIZE 10000
 
