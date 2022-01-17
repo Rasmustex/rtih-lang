@@ -1,6 +1,7 @@
 /*
  * Very simple toy programming language. It is stack based and will probably
 only have an interpreted version
+ * TODO: if stack
  * TODO: Better error printing and -handling
  * TODO: Tidy op args
  * TODO: More operations
@@ -25,12 +26,13 @@ enum OP {
     OP_MINUS,
     OP_DUMP,
     OP_EXIT,
+    OP_EQ,
     NUM_OPS
 };
 
 enum TOK_TYPE {
     NUM,
-    NAME,
+    WORD,
     OP,
     COMMENT
 };
@@ -63,16 +65,11 @@ int main( int argc, const char **argv ) {
  */
 
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) );
-void push( int argc, uint64_t args[10] );
-void plus();
-void minus();
-void dump();
-void exit_program();
 
 int sim( struct command *program ) {
     void (*op[NUM_OPS])( int argc, uint64_t args[10] );
     sim_setup_function_array( op );
-    assert(NUM_OPS == 5 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 6 && "Unhandled operations in simulation mode");
     while( 1 ) {
         op[program->op]( program->argc, program->args );
         ++program;
@@ -80,12 +77,20 @@ int sim( struct command *program ) {
     return 0;
 }
 
+void push( int argc, uint64_t args[10] );
+void plus();
+void minus();
+void dump();
+void exit_program();
+void eq();
+
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
     op[OP_DUMP]  = dump;
     op[OP_EXIT]  = exit_program;
+    op[OP_EQ]    = eq;
 }
 
 struct command push_op( int x ) {
@@ -129,6 +134,14 @@ struct command exit_program_op() {
     return com;
 }
 
+struct command eq_op() {
+    struct command com = {
+        .op = OP_EQ,
+        .argc = 0
+    };
+    return com;
+}
+
 #define STACK_SIZE 10000
 
 uint64_t stack[STACK_SIZE] = {0};
@@ -163,6 +176,13 @@ inline void dump() {
 
 inline void exit_program() {
     exit(POP_SIM);
+    return;
+}
+
+inline void eq() {
+    register uint64_t temp = POP_SIM;
+    temp = ( temp == POP_SIM );
+    PUSH_SIM(temp);
     return;
 }
 
@@ -206,11 +226,14 @@ struct command *read_program_from_file( const char *fname ) {
         case '.':
             *pp++ = dump_op();
             break;
-        case NAME: // if name, check if exit, and then exit. Other names yet to be implemented
+        case '=':
+            *pp++ = eq_op();
+            break;
+        case WORD: // if name, check if exit, and then exit. Other names yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
                 *pp++ = exit_program_op();
             } else {
-                printf( "%s:%lu: Error: name %s not recognised, and custom names not implemented\n", fname, lineno, tok );
+                printf( "%s:%lu: Error: word %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
             }
             break;
@@ -239,13 +262,12 @@ struct command *read_program_from_file( const char *fname ) {
     return prog;
 }
 
-enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount ) {
+enum TOK_TYPE tokenize( FILE *f, char *tok, uint64_t *linecount ) {
     char *p = tok;
     register char c;
     // TODO: Operating on lines - would let us ignore comments
-    while( (c = fgetc( f )) == ' ' || c == '\t' || c == '\n' )
-        if( c == '\n' )
-            ++*linecount;
+    while( ( c = fgetc( f ) ) == ' ' || c == '\t' || c == '\n' )
+        *linecount += (c == '\n'); // incremnet line count if newline
 
     // Does token start with an alphabetic character? Then it must be a name
     if( isalpha( c ) ) {
@@ -254,7 +276,7 @@ enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount ) {
 
         *p = '\0'; // null-termination
         ungetc( c, f );
-        return tt = NAME;
+        return tt = WORD;
     } else if( isdigit(c) ) { // If c is a digit, it must be part of a number that should be pushed to the stack
         for( *p++ = c; isdigit( c = fgetc( f ) ) && p - tok < MAXTOK - 1; )
             *p++ = c;
@@ -263,10 +285,9 @@ enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount ) {
         ungetc( c, f );
         return tt = NUM;
     } else if ( c == '#' ) { // We've found a comment. Skip to the next line
-        while( (c = fgetc( f )) != '\n' && c != EOF )
+        while( ( c = fgetc( f ) ) != '\n' && c != EOF )
             ;
-        if( c == '\n' )
-            ++*linecount;
+        *linecount += (c == '\n');
         return tt = COMMENT;
     } else {
         *p++ = c;
