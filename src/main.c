@@ -1,7 +1,6 @@
 /*
  * Very simple toy programming language. It is stack based and will probably
 only have an interpreted version
- * TODO: if stack
  * TODO: Better error printing and -handling
  * TODO: Tidy op args
  * TODO: More operations
@@ -29,6 +28,9 @@ enum OP {
     OP_EXIT,
     OP_EQ,
     OP_DUP,
+    OP_IF,
+    OP_END,
+    OP_PROGRAM_END,
     NUM_OPS
 };
 
@@ -66,15 +68,26 @@ int main( int argc, const char **argv ) {
  * ============================================================ simulation mode
  */
 
-void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) );
 
 int sim( struct command *program ) {
+    void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) );
+    void link_blocks( struct command *program );
+
     void (*op[NUM_OPS])( int argc, uint64_t args[10] );
+    struct command *p = program;
     sim_setup_function_array( op );
-    assert(NUM_OPS == 7 && "Unhandled operations in simulation mode");
+    link_blocks( program );
+
+    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode");
+
     while( 1 ) {
-        op[program->op]( program->argc, program->args );
-        ++program;
+        op[p->op]( p->argc, p->args );
+        if( p->op == OP_IF ) {
+            /* if( !(p->args[1]) ) */
+            p = program + !(p->args[1]) * p->args[0] + p->args[1] * (p - program);
+            //p = program + p->args[0];
+        }
+        ++p;
     }
     return 0;
 }
@@ -86,8 +99,11 @@ void dump();
 void exit_program();
 void eq();
 void dup_stack();
+void iff( int argc, uint64_t args[10] );
+void end();
 
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
+    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
@@ -95,9 +111,14 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_EXIT]  = exit_program;
     op[OP_EQ]    = eq;
     op[OP_DUP]   = dup_stack;
+    op[OP_IF]    = iff;
+    op[OP_END]   = end;
 }
 
-struct command make_op( enum OP op, int argc, int *args ) {
+
+
+// Maybe this could be void using pointers, allowing for inline?
+struct command make_op( enum OP op, int argc, uint64_t *args ) {
     struct command com = {
         .op = op,
         .argc = argc
@@ -107,13 +128,19 @@ struct command make_op( enum OP op, int argc, int *args ) {
     return com;
 }
 
-struct command push_op( int x )        { return make_op( OP_PUSH, 1, &x ); }
+struct command push_op( uint64_t x )   { return make_op( OP_PUSH, 1, &x ); }
 struct command plus_op( void )         { return make_op( OP_PLUS, 0, NULL ); }
 struct command minus_op( void )        { return make_op( OP_MINUS, 0, NULL ); }
 struct command dump_op( void )         { return make_op( OP_DUMP, 0, NULL ); }
 struct command exit_program_op( void ) { return make_op( OP_EXIT, 0, NULL ); }
 struct command eq_op( void )           { return make_op( OP_EQ, 0, NULL ); }
 struct command dup_stack_op( void )    { return make_op( OP_DUP, 0, NULL ); }
+struct command if_op( uint64_t addr )  {
+    uint64_t args[2] = { addr, 0 };
+    return make_op( OP_IF, (addr != -1) * 2, args );
+};
+struct command end_op( void )          { return make_op( OP_END, 0, NULL ); }
+struct command program_end_op( void )  { return make_op( OP_PROGRAM_END, 0, NULL ); }
 
 #define STACK_SIZE 10000
 
@@ -165,11 +192,23 @@ inline void dup_stack() {
     return;
 }
 
+void iff( int argc, uint64_t args[10] ) {
+    assert( argc == 2 && "remember to call link_blocks before simulating" );
+    args[1] = POP_SIM != 0;
+    return;
+}
+
+void end() {
+    return;
+}
+
 #define MAXTOK 100
 
 int tt; // The type of token that the tokenizer has processed
 
 struct command *read_program_from_file( const char *fname ) {
+    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode");
+
     enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount );
     char tok[MAXTOK]; // Holds the found token
 
@@ -213,6 +252,10 @@ struct command *read_program_from_file( const char *fname ) {
                 *pp++ = exit_program_op();
             } else if( !strcmp( tok, "dup" ) ) {
                 *pp++ = dup_stack_op();
+            } else if ( !strcmp( tok, "if" ) ) {
+                *pp++ = if_op( -1 );
+            } else if (!strcmp(tok, "end") ) {
+                *pp++ = end_op();
             } else {
                 printf( "%s:%lu: Error: word %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
@@ -226,9 +269,9 @@ struct command *read_program_from_file( const char *fname ) {
             break;
         }
 
-        if( !(pp - prog < proglen - 1) ) { // reallocate more memory for the program array if we run out - keep a buffer so we can always add the exit op at the end if the user hasn't
+        if( !(pp - prog < proglen - 2) ) { // reallocate more memory for the program array if we run out - keep a buffer so we can always add the exit op at the end if the user hasn't
             temp = pp - prog;
-            if( !(prog = ( struct command*)realloc( prog, (proglen += 1000) * sizeof( struct command ) ) ) ) {
+            if( !(prog = (struct command*)realloc( prog, (proglen *= 2) * sizeof( struct command ) ) ) ) {
                 printf( "Error: program memory reallocation failed\n" );
                 exit(1);
             }
@@ -238,8 +281,9 @@ struct command *read_program_from_file( const char *fname ) {
     fclose( f );
     if( (pp - 1)->op != OP_EXIT ) {
         *pp++ = push_op(0);
-        *pp = exit_program_op();
+        *pp++ = exit_program_op();
     } // if there is no exit statement in the program, we just add one ourselves at the end
+    *pp = program_end_op(); // Makes sure the block linker doesn't go further than it needs to by signifying end of program
     return prog;
 }
 
@@ -275,6 +319,30 @@ enum TOK_TYPE tokenize( FILE *f, char *tok, uint64_t *linecount ) {
         *p = '\0';
         return tt = c;
     }
+}
+
+#define IF_STACK_SIZE 100
+
+void link_blocks( struct command *prog ) {
+    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode - only need to add block ops here");
+    struct command *p = prog;
+    uint64_t ifs[IF_STACK_SIZE];
+    uint64_t *s = ifs;
+    while( p->op != OP_PROGRAM_END ) {
+        if( p->op == OP_IF ) {
+            *s++ = p - prog;
+        }
+        else if( p->op == OP_END ) {
+            *( prog + *--s ) = if_op( p - prog );
+            assert( ( prog + *s )->op == OP_IF && "For now, only if can be ended" );
+        }
+        ++p;
+    }
+    if( (s - ifs) ) {
+        printf( "Error: if(s) missing an end block" );
+        exit( 1 );
+    }
+    return;
 }
 
 void print_help( const char* progname ) {
