@@ -8,7 +8,7 @@ only have an interpreted version
  * TODO: Pointers
  * TODO: Strings
  * TODO: Tidy into multiple files
- * TODO: Functions/procedures, probably using goto, call and ret
+ * TODO: Functions using fun, call and ret
  */
 
 #include <stdint.h>
@@ -30,6 +30,7 @@ enum OP {
     OP_DUP,
     OP_IF,
     OP_END,
+    OP_GOTO,
     OP_PROGRAM_END,
     NUM_OPS
 };
@@ -72,17 +73,15 @@ int main( int argc, const char **argv ) {
 int sim( struct command *program ) {
     void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) );
     void link_blocks( struct command *program );
-
+    void prep_jumping_commands( struct command *program, struct command **p );
     void (*op[NUM_OPS])( int argc, uint64_t args[10] );
     struct command *p = program;
     sim_setup_function_array( op );
     link_blocks( program );
+    prep_jumping_commands( program, &p );
 
     while( 1 ) {
         op[p->op]( p->argc, p->args );
-        if( p->op == OP_IF ) {
-            p = program + !(p->args[1]) * p->args[0] + p->args[1] * (p - program);
-        }
         ++p;
     }
     return 0;
@@ -96,10 +95,11 @@ void exit_program();
 void eq();
 void dup_stack( int argc, uint64_t args[10] );
 void iff( int argc, uint64_t args[10] );
+void goto_label();
 void end();
 
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
-    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 11 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
@@ -108,10 +108,21 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_EQ]    = eq;
     op[OP_DUP]   = dup_stack;
     op[OP_IF]    = iff;
+    op[OP_GOTO]  = goto_label;
     op[OP_END]   = end;
 }
 
-
+void prep_jumping_commands( struct command *program, struct command **p ) {
+    struct command *prog = program;
+    while( prog->op != OP_PROGRAM_END ) {
+        if( prog->op == OP_IF || prog->op == OP_GOTO ) {
+            prog->args[prog->argc - 2] = (uint64_t)program;
+            prog->args[prog->argc - 1] = (uint64_t)p;
+        }
+        ++prog;
+    }
+    return;
+}
 
 // Maybe this could be void using pointers, allowing for inline?
 struct command make_op( enum OP op, int argc, uint64_t *args ) {
@@ -124,19 +135,23 @@ struct command make_op( enum OP op, int argc, uint64_t *args ) {
     return com;
 }
 
-struct command push_op( uint64_t x )         { return make_op( OP_PUSH, 1, &x ); }
-struct command plus_op( void )               { return make_op( OP_PLUS, 0, NULL ); }
-struct command minus_op( void )              { return make_op( OP_MINUS, 0, NULL ); }
-struct command dump_op( void )               { return make_op( OP_DUMP, 0, NULL ); }
-struct command exit_program_op( void )       { return make_op( OP_EXIT, 0, NULL ); }
-struct command eq_op( void )                 { return make_op( OP_EQ, 0, NULL ); }
-struct command dup_stack_op( uint64_t reps ) { return make_op( OP_DUP, 1, &reps ); }
-struct command if_op( uint64_t addr )        {
-    uint64_t args[2] =                       { addr, 0 };
-    return make_op( OP_IF, (addr != -1) * 2, args );
-};
-struct command end_op( void )                { return make_op( OP_END, 0, NULL ); }
-struct command program_end_op( void )        { return make_op( OP_PROGRAM_END, 0, NULL ); }
+struct command push_op( uint64_t x )          { return make_op( OP_PUSH, 1, &x ); }
+struct command plus_op( void )                { return make_op( OP_PLUS, 0, NULL ); }
+struct command minus_op( void )               { return make_op( OP_MINUS, 0, NULL ); }
+struct command dump_op( void )                { return make_op( OP_DUMP, 0, NULL ); }
+struct command exit_program_op( void )        { return make_op( OP_EXIT, 0, NULL ); }
+struct command eq_op( void )                  { return make_op( OP_EQ, 0, NULL ); }
+struct command dup_stack_op( uint64_t reps )  { return make_op( OP_DUP, 1, &reps ); }
+struct command if_op( uint64_t addr )         {
+    uint64_t args[4] = { addr, 0, 0, 0 };
+    return make_op( OP_IF, (addr != -1) * 4, args );
+}
+struct command end_op( void )                 { return make_op( OP_END, 0, NULL ); }
+struct command goto_label_op( uint64_t addr ) {
+    uint64_t args[3] = { addr, 0, 0 };
+    return make_op( OP_GOTO, 3, args );
+}
+struct command program_end_op( void )         { return make_op( OP_PROGRAM_END, 0, NULL ); }
 
 #define STACK_SIZE 10000
 
@@ -193,26 +208,42 @@ inline void dup_stack( int argc, uint64_t args[10] ) {
     return;
 }
 
-void iff( int argc, uint64_t args[10] ) {
-    assert( argc == 2 && "remember to call link_blocks before simulating" );
-    args[1] = POP_SIM != 0;
+inline void iff( int argc, uint64_t args[10] ) {
+    assert( argc == 4 && "remember to call link_blocks before simulating" );
+    struct command *prog = (struct command *)args[argc - 2];
+    struct command **p = (struct command **)args[argc - 1];
+    if( !POP_SIM )
+        *p = prog + args[0];
     return;
 }
 
-void end() {
+inline void goto_label( int argc, uint64_t args[10] ) {
+    struct command *prog = (struct command *)args[argc - 2];
+    struct command **p = (struct command **)args[argc - 1];
+    *p = prog + args[0] - 1;
+    return;
+}
+
+inline void end() {
     return;
 }
 
 #define MAXTOK 100
+#define MAXLABELS 1000
 
 int tt; // The type of token that the tokenizer has processed
 
+uint64_t label_poses[MAXLABELS];
+uint64_t n_labels = 0;
+
 // TODO: different block syntax because I don't like end
 struct command *read_program_from_file( const char *fname ) {
-    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 11 && "Unhandled operations in simulation mode");
 
     enum TOK_TYPE tokenize( FILE *f, char* tok, uint64_t *linecount );
+    int is_label( char* word );
     char tok[MAXTOK]; // Holds the found token
+    char labels[MAXLABELS][MAXTOK];
 
     size_t proglen = 10000; // Initial length of operation array
     struct command *prog = (struct command*)malloc( proglen * sizeof( struct command ) ); // array of the commands that the program will execute
@@ -254,12 +285,32 @@ struct command *read_program_from_file( const char *fname ) {
                 *pp++ = exit_program_op();
             } else if( !strcmp( tok, "dup" ) ) {
                 *pp++ = dup_stack_op( 1 );
-            } else if (!strcmp(tok, "dup2") ) {
+            } else if(!strcmp(tok, "dup2") ) {
                 *pp++ = dup_stack_op( 2 );
-            } else if ( !strcmp( tok, "if" ) ) {
+            } else if( !strcmp( tok, "if" ) ) {
                 *pp++ = if_op( -1 );
-            } else if (!strcmp(tok, "end") ) {
+            } else if(!strcmp(tok, "end") ) {
                 *pp++ = end_op();
+            } else if( is_label(tok) ) {
+                strncpy( labels[n_labels], tok, 100 ); // copy label name into labels table
+                label_poses[n_labels++] = pp - prog; // set label pos to current op - will be incremented to next op
+            } else if(!strcmp(tok, "goto") ) {
+                if( tokenize( f, tok, &lineno ) != WORD ) {
+                    printf( "%s:%lu: Error: goto: %s is not a valid label name", fname, lineno, tok );
+                    exit(1);
+                }
+                temp = 0; // keeps track of if we have found a label
+                for( uint64_t i = 0; i < n_labels; i++ ) {
+                    if( !strcmp( tok, labels[i] ) ) {
+                        *pp++ = goto_label_op( label_poses[i] );
+                        temp = 1;
+                        break;
+                    }
+                }
+                if( !temp ) {
+                    printf( "%s:%lu: Error: goto: %s label doesn't exist", fname, lineno, tok );
+                    exit(1);
+                }
             } else {
                 printf( "%s:%lu: Error: word %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
@@ -300,7 +351,7 @@ enum TOK_TYPE tokenize( FILE *f, char *tok, uint64_t *linecount ) {
 
     // Does token start with an alphabetic character? Then it must be a name
     if( isalpha( c ) ) {
-        for( *p++ = c; isalnum( c = fgetc( f ) ) && p - tok < MAXTOK - 1; ) // copy c to tok as long as c is alphanumeric and we haven't exceeded max length
+        for( *p++ = c; ( isalnum( c = fgetc( f ) ) || c == ':' ) && p - tok < MAXTOK - 1; ) // copy c to tok as long as c is alphanumeric or : and we haven't exceeded max length
             *p++ = c;
 
         *p = '\0'; // null-termination
@@ -325,10 +376,22 @@ enum TOK_TYPE tokenize( FILE *f, char *tok, uint64_t *linecount ) {
     }
 }
 
+// returns 1 and chops : off of word if word is label
+int is_label( char *word ) {
+    char *w = word;
+    while( *w ) // Go to end of word
+        ++w;
+    if( *(w - 1) == ':' ) {
+        *(w - 1) = '\0';
+        return 1;
+    }
+    return 0;
+}
+
 #define IF_STACK_SIZE 100
 
 void link_blocks( struct command *prog ) {
-    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode - only need to add block ops here");
+    assert(NUM_OPS == 11 && "Unhandled operations in simulation mode - only need to add block ops here");
     struct command *p = prog;
     uint64_t ifs[IF_STACK_SIZE];
     uint64_t *s = ifs;
