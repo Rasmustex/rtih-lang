@@ -78,14 +78,10 @@ int sim( struct command *program ) {
     sim_setup_function_array( op );
     link_blocks( program );
 
-    assert(NUM_OPS == 10 && "Unhandled operations in simulation mode");
-
     while( 1 ) {
         op[p->op]( p->argc, p->args );
         if( p->op == OP_IF ) {
-            /* if( !(p->args[1]) ) */
             p = program + !(p->args[1]) * p->args[0] + p->args[1] * (p - program);
-            //p = program + p->args[0];
         }
         ++p;
     }
@@ -98,7 +94,7 @@ void minus();
 void dump();
 void exit_program();
 void eq();
-void dup_stack();
+void dup_stack( int argc, uint64_t args[10] );
 void iff( int argc, uint64_t args[10] );
 void end();
 
@@ -128,19 +124,19 @@ struct command make_op( enum OP op, int argc, uint64_t *args ) {
     return com;
 }
 
-struct command push_op( uint64_t x )   { return make_op( OP_PUSH, 1, &x ); }
-struct command plus_op( void )         { return make_op( OP_PLUS, 0, NULL ); }
-struct command minus_op( void )        { return make_op( OP_MINUS, 0, NULL ); }
-struct command dump_op( void )         { return make_op( OP_DUMP, 0, NULL ); }
-struct command exit_program_op( void ) { return make_op( OP_EXIT, 0, NULL ); }
-struct command eq_op( void )           { return make_op( OP_EQ, 0, NULL ); }
-struct command dup_stack_op( void )    { return make_op( OP_DUP, 0, NULL ); }
-struct command if_op( uint64_t addr )  {
-    uint64_t args[2] = { addr, 0 };
+struct command push_op( uint64_t x )         { return make_op( OP_PUSH, 1, &x ); }
+struct command plus_op( void )               { return make_op( OP_PLUS, 0, NULL ); }
+struct command minus_op( void )              { return make_op( OP_MINUS, 0, NULL ); }
+struct command dump_op( void )               { return make_op( OP_DUMP, 0, NULL ); }
+struct command exit_program_op( void )       { return make_op( OP_EXIT, 0, NULL ); }
+struct command eq_op( void )                 { return make_op( OP_EQ, 0, NULL ); }
+struct command dup_stack_op( uint64_t reps ) { return make_op( OP_DUP, 1, &reps ); }
+struct command if_op( uint64_t addr )        {
+    uint64_t args[2] =                       { addr, 0 };
     return make_op( OP_IF, (addr != -1) * 2, args );
 };
-struct command end_op( void )          { return make_op( OP_END, 0, NULL ); }
-struct command program_end_op( void )  { return make_op( OP_PROGRAM_END, 0, NULL ); }
+struct command end_op( void )                { return make_op( OP_END, 0, NULL ); }
+struct command program_end_op( void )        { return make_op( OP_PROGRAM_END, 0, NULL ); }
 
 #define STACK_SIZE 10000
 
@@ -186,9 +182,14 @@ inline void eq() {
     return;
 }
 
-inline void dup_stack() {
-    register uint64_t temp = *(sp - 1);
-    *sp++ = temp;
+inline void dup_stack( int argc, uint64_t args[10] ) {
+    assert( argc == 1 && "You need to pass how many times you want to dup" );
+    register uint64_t temp;
+    register uint64_t *lsp = sp;
+    for( register uint64_t i = 0; i < args[0]; i++ ) {
+        temp = *--lsp;
+        PUSH_SIM(temp);
+    }
     return;
 }
 
@@ -206,6 +207,7 @@ void end() {
 
 int tt; // The type of token that the tokenizer has processed
 
+// TODO: different block syntax because I don't like end
 struct command *read_program_from_file( const char *fname ) {
     assert(NUM_OPS == 10 && "Unhandled operations in simulation mode");
 
@@ -247,11 +249,13 @@ struct command *read_program_from_file( const char *fname ) {
         case '=':
             *pp++ = eq_op();
             break;
-        case WORD: // if name, check if exit, and then exit. Other names yet to be implemented
+        case WORD: // if word, check if exit, and then exit. Other words yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
                 *pp++ = exit_program_op();
             } else if( !strcmp( tok, "dup" ) ) {
-                *pp++ = dup_stack_op();
+                *pp++ = dup_stack_op( 1 );
+            } else if (!strcmp(tok, "dup2") ) {
+                *pp++ = dup_stack_op( 2 );
             } else if ( !strcmp( tok, "if" ) ) {
                 *pp++ = if_op( -1 );
             } else if (!strcmp(tok, "end") ) {
