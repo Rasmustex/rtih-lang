@@ -1,4 +1,4 @@
-# This program prints the fibonnaci sequence until and including 21
+# This program prints the fibonacci sequence up until and including 6765
 0 dup . 1 dup .
 test:
 dup2
@@ -6,7 +6,7 @@ dup2
 dup
 .
 dup
-21 = if
+6765 = if
 0 exit
 end
 goto test
