@@ -375,6 +375,7 @@ void second_pass( const char *fname, FILE *f, struct command *program ) {
                         printf( "%s:%lu: error: goto: %s label doesn't exist", fname, lineno, tok );
                         exit(1);
                     }
+                    break;
                 }
             }
         }
