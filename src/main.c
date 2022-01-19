@@ -357,7 +357,7 @@ struct command *read_program_from_file( const char *fname ) {
 
 void second_pass( const char *fname, FILE *f, struct command *program ) {
     fseek( f, 0, SEEK_SET ); // Go back to start of program
-    uint64_t lineno = 0;
+    uint64_t lineno = 1;
     register uint64_t temp;
     while( program->op != OP_PROGRAM_END ) {
         if( program->op == OP_GOTO ) {
