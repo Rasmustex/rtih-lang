@@ -1,6 +1,8 @@
 /*
  * Very simple toy programming language. It is stack based and will probably
 only have an interpreted version
+ * TODO: Functions using fun, call and ret
+ * TODO: Move all secondary linking passes through the program to the same loop for optimization
  * TODO: Better error printing and -handling
  * TODO: Tidy op args
  * TODO: More operations
@@ -8,7 +10,6 @@ only have an interpreted version
  * TODO: Pointers
  * TODO: Strings
  * TODO: Tidy into multiple files
- * TODO: Functions using fun, call and ret
  */
 
 #include <stdint.h>
