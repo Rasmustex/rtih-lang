@@ -19,6 +19,7 @@ only have an interpreted version
 #include <unistd.h>
 #include <string.h>
 
+// enumerated list of operation types
 enum OP {
     OP_PUSH,
     OP_PLUS,
@@ -27,6 +28,7 @@ enum OP {
     OP_EXIT,
     OP_EQ,
     OP_DUP,
+    OP_SWAP,
     OP_IF,
     OP_END,
     OP_GOTO,
@@ -34,6 +36,7 @@ enum OP {
     NUM_OPS
 };
 
+// token types from tokenizer
 enum TOK_TYPE {
     NUM,
     WORD,
@@ -41,14 +44,17 @@ enum TOK_TYPE {
     COMMENT
 };
 
+// program commands; contains information needed for exectution
 struct command {
     enum OP op;
     int argc;
     uint64_t args[10];
 };
 
+// simulate the program, linking blocks and jumping commands
 int sim( struct command *program );
 
+// Read and parse program from file fname. Returns program that needs block and jump command linking
 struct command *read_program_from_file( const char *fname );
 void print_help( const char* progname );
 
@@ -89,6 +95,7 @@ void push( int argc, uint64_t args[10] );
 void plus();
 void minus();
 void dump();
+void swap( int argc, uint64_t args[10] );
 void exit_program();
 void eq();
 void dup_stack( int argc, uint64_t args[10] );
@@ -98,7 +105,7 @@ void end();
 
 // maps operations to their corresponding spots in the operation array
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
-    assert(NUM_OPS == 11 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 12 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
@@ -106,6 +113,7 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_EXIT]  = exit_program;
     op[OP_EQ]    = eq;
     op[OP_DUP]   = dup_stack;
+    op[OP_SWAP]  = swap;
     op[OP_IF]    = iff;
     op[OP_GOTO]  = goto_label;
     op[OP_END]   = end;
@@ -137,33 +145,35 @@ struct command make_op( enum OP op, int argc, uint64_t *args ) {
 }
 
 // returns OP_PUSH command with args[0] as the item to be pushed
-struct command push_op( uint64_t x )          { return make_op( OP_PUSH, 1, &x ); }
+struct command push_op( uint64_t x )             { return make_op( OP_PUSH, 1, &x ); }
 // returns command with OP_PLUS
-struct command plus_op( void )                { return make_op( OP_PLUS, 0, NULL ); }
+struct command plus_op( void )                   { return make_op( OP_PLUS, 0, NULL ); }
 // returns command with OP_MINUS
-struct command minus_op( void )               { return make_op( OP_MINUS, 0, NULL ); }
+struct command minus_op( void )                  { return make_op( OP_MINUS, 0, NULL ); }
 // returns command with OP_DUMP
-struct command dump_op( void )                { return make_op( OP_DUMP, 0, NULL ); }
+struct command dump_op( void )                   { return make_op( OP_DUMP, 0, NULL ); }
 // returns command with OP_EXIT
-struct command exit_program_op( void )        { return make_op( OP_EXIT, 0, NULL ); }
+struct command exit_program_op( void )           { return make_op( OP_EXIT, 0, NULL ); }
 // returns command with OP_EQ
-struct command eq_op( void )                  { return make_op( OP_EQ, 0, NULL ); }
+struct command eq_op( void )                     { return make_op( OP_EQ, 0, NULL ); }
 // returns command with OP_DUP and amount of elements to dup as args[0]
-struct command dup_stack_op( uint64_t elements )  { return make_op( OP_DUP, 1, &elements ); }
+struct command dup_stack_op( uint64_t elements ) { return make_op( OP_DUP, 1, &elements ); }
+// returns command with OP_SWAP and amount of elements to swap
+struct command swap_op( uint64_t elements )      { return make_op( OP_SWAP, 1, &elements ); }
 // returns if op with address of end of block and 3 empty spaces
-struct command if_op( uint64_t addr )         {
+struct command if_op( uint64_t addr )            {
     uint64_t args[4] = { addr, 0, 0, 0 };
     return make_op( OP_IF, (addr != -1) * 4, args );
 }
 // returns command with OP_END to indicate end of block
-struct command end_op( void )                 { return make_op( OP_END, 0, NULL ); }
+struct command end_op( void )                    { return make_op( OP_END, 0, NULL ); }
 // returns command with OP_GOTO and args consisting of: address of label and 2 empty spots
-struct command goto_label_op( uint64_t addr ) {
+struct command goto_label_op( uint64_t addr )    {
     uint64_t args[3] = { addr, 0, 0 };
     return make_op( OP_GOTO, 3, args );
 }
 // indicates end of program for functions that crawl the command array
-struct command program_end_op( void )         { return make_op( OP_PROGRAM_END, 0, NULL ); }
+struct command program_end_op( void )            { return make_op( OP_PROGRAM_END, 0, NULL ); }
 
 #define STACK_SIZE 10000
 
@@ -228,6 +238,26 @@ inline void dup_stack( int argc, uint64_t args[10] ) {
     return;
 }
 
+inline void swap( int argc, uint64_t args[10] ) {
+    assert( argc == 1 && "remember to pass the amount of elements to be swapped" );
+    uint64_t swap_1[10];
+    uint64_t swap_2[10];
+
+    register uint64_t i;
+    for( i = 0; i < args[0]; ++i )
+        swap_1[i] = POP_SIM;
+
+    for( i = 0; i < args[0]; ++i )
+        swap_2[i] = POP_SIM;
+
+    for( i = args[0]; i > 0; --i )
+        PUSH_SIM(swap_1[i - 1]);
+
+    for( i = args[0]; i > 0; --i )
+        PUSH_SIM(swap_2[i - 1]);
+    return;
+}
+
 // goes to corresponding end(args[0]) when condition is false, otherwise falls through
 inline void iff( int argc, uint64_t args[10] ) {
     assert( argc == 4 && "remember to call link_blocks before simulating" );
@@ -264,7 +294,7 @@ enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount );
 // TODO: different block syntax because I don't like end
 // Reads fname for tokens and parses tokens to create program out of commands
 struct command *read_program_from_file( const char *fname ) {
-    assert(NUM_OPS == 11 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 12 && "Unhandled operations in simulation mode");
 
     void second_pass( const char *fname, FILE *f, struct command *program );
     int is_label( char* word );
@@ -311,6 +341,10 @@ struct command *read_program_from_file( const char *fname ) {
                 *pp++ = dup_stack_op( 1 );
             } else if(!strcmp(tok, "dup2") ) {
                 *pp++ = dup_stack_op( 2 );
+            } else if( !strcmp( tok, "swap" ) ) {
+                *pp++ = swap_op( 1 );
+            } else if( !strcmp( tok, "swap2" ) ) {
+                *pp++ = swap_op( 2 );
             } else if( !strcmp( tok, "if" ) ) {
                 *pp++ = if_op( -1 );
             } else if(!strcmp( tok, "end" ) ) {
@@ -355,27 +389,29 @@ struct command *read_program_from_file( const char *fname ) {
     return prog;
 }
 
+// passes through program and then file if necessary a second time, to make sure goto can see labels ahead of the command. TODO: Merge with the other second program passes
 void second_pass( const char *fname, FILE *f, struct command *program ) {
-    fseek( f, 0, SEEK_SET ); // Go back to start of program
+    fseek( f, 0, SEEK_SET ); // Go back to start of file
     uint64_t lineno = 1;
-    register uint64_t temp;
+    register uint8_t label_found; // boolean that is set if corresponding label to goto is found
+
     while( program->op != OP_PROGRAM_END ) {
         if( program->op == OP_GOTO ) {
-            while( tokenize( f, &lineno ) != EOF ) {
+            while( tokenize( f, &lineno ) != EOF ) { // go through file until the corresponding goto is found - first goto stops at first occurence and so on
                 if( tt == WORD && !strcmp( tok, "goto" ) ) {
-                    tokenize( f, &lineno );
-                    for( uint64_t i = 0; i < n_labels; i++ ) {
-                        if( !strcmp( tok, labels[i] ) ) {
-                            *program = goto_label_op( label_poses[i] );
-                            temp = 1;
+                    tokenize( f, &lineno ); // get the goto label
+                    for( uint64_t i = 0; i < n_labels; i++ ) { // go through labels
+                        if( !strcmp( tok, labels[i] ) ) { // does the label after goto match any known labels?
+                            *program = goto_label_op( label_poses[i] ); // if yes, link goto to corresponding label pos
+                            label_found = 1;
                             break;
                         }
                     }
-                    if( !temp ) {
+                    if( !label_found ) {
                         printf( "%s:%lu: error: goto: %s label doesn't exist", fname, lineno, tok );
                         exit(1);
                     }
-                    break;
+                    break; // if temp, break the tokenizing loop
                 }
             }
         }
@@ -436,16 +472,16 @@ int is_label( char *word ) {
 
 // Link commands that start a block to corresponding end commands in the program
 void link_blocks( struct command *prog ) {
-    assert(NUM_OPS == 11 && "Unhandled operations in simulation mode - only need to add block ops here");
+    assert(NUM_OPS == 12 && "Unhandled operations in simulation mode - only need to add block ops here");
     struct command *p = prog;
     uint64_t ifs[IF_STACK_SIZE];
     uint64_t *s = ifs;
     while( p->op != OP_PROGRAM_END ) {
         if( p->op == OP_IF ) {
-            *s++ = p - prog;
+            *s++ = p - prog; // add the if to if stack
         }
         else if( p->op == OP_END ) {
-            *( prog + *--s ) = if_op( p - prog );
+            *( prog + *--s ) = if_op( p - prog ); // pop if from if stack and set it to point to the adress of end op
             assert( ( prog + *s )->op == OP_IF && "For now, only if can be ended" );
         }
         ++p;
