@@ -1,7 +1,6 @@
 /*
  * Very simple toy programming language. It is stack based and will probably
 only have an interpreted version
- * TODO: Functions using fun, call and ret
  * TODO: Move all secondary linking passes through the program to the same loop for optimization
  * TODO: Better error printing and -handling
  * TODO: Tidy op args
@@ -33,6 +32,9 @@ enum OP {
     OP_IF,
     OP_END,
     OP_GOTO,
+    OP_FUN,
+    OP_CALL,
+    OP_RET,
     OP_PROGRAM_END,
     NUM_OPS
 };
@@ -50,6 +52,13 @@ struct command {
     enum OP op;
     int argc;
     uint64_t args[10];
+};
+
+typedef struct function func;
+struct function {
+    uint64_t pos;
+    char name[100];
+    func *next;
 };
 
 // simulate the program, linking blocks and jumping commands
@@ -102,11 +111,14 @@ void eq();
 void dup_stack( int argc, uint64_t args[10] );
 void iff( int argc, uint64_t args[10] );
 void goto_label( int argc, uint64_t args[10] );
+void fun( int argc, uint64_t args[10] );
+void call( int argc, uint64_t args[10] );
+void ret( int argc, uint64_t args[10] );
 void end();
 
 // maps operations to their corresponding spots in the operation array
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
-    assert(NUM_OPS == 12 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 15 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
@@ -117,6 +129,9 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_SWAP]  = swap;
     op[OP_IF]    = iff;
     op[OP_GOTO]  = goto_label;
+    op[OP_FUN]   = fun;
+    op[OP_CALL]  = call;
+    op[OP_RET]   = ret;
     op[OP_END]   = end;
 }
 
@@ -124,7 +139,7 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
 void prep_jumping_commands( struct command *program, struct command **p ) {
     struct command *prog = program;
     while( prog->op != OP_PROGRAM_END ) {
-        if( prog->op == OP_IF || prog->op == OP_GOTO ) {
+        if( prog->op == OP_IF || prog->op == OP_GOTO || prog->op == OP_FUN || prog->op == OP_CALL || prog->op == OP_RET ) {
             prog->args[prog->argc - 2] = (uint64_t)program;
             prog->args[prog->argc - 1] = (uint64_t)p;
         }
@@ -173,17 +188,35 @@ struct command goto_label_op( uint64_t addr )    {
     uint64_t args[3] = { addr, 0, 0 };
     return make_op( OP_GOTO, 3, args );
 }
+// returns a func operation with end addr as first arg and whether it's called as second
+struct command fun_op( uint64_t addr )           {
+    uint64_t args[4] = { addr, 0, 0, 0 };
+    return make_op( OP_FUN, 4, args );
+}
+// returns a call operation with the call address as args[0]
+struct command call_op( uint64_t addr )          {
+    uint64_t args[3] = { addr, 0, 0 };
+    return make_op( OP_CALL, 3, args );
+}
+// returns a return operation
+struct command ret_op()                          {
+    uint64_t args[2] = { 0, 0 };
+    return make_op( OP_RET, 2, args );
+}
 // indicates end of program for functions that crawl the command array
 struct command program_end_op( void )            { return make_op( OP_PROGRAM_END, 0, NULL ); }
 
 #define STACK_SIZE 10000
-
 // stack for simulation
 uint64_t stack[STACK_SIZE] = {0};
 uint64_t *sp = stack;
-
 #define POP_SIM *--sp
 #define PUSH_SIM(x) *sp++ = x
+
+// Call stack setup
+#define CALL_STACK_SIZE 100000
+uint64_t call_stack[CALL_STACK_SIZE] = {0};
+uint64_t *csp = call_stack;
 
 // pushes args[0] to stack
 inline void push( int argc, uint64_t args[] ) {
@@ -277,6 +310,34 @@ inline void goto_label( int argc, uint64_t args[10] ) {
     return;
 }
 
+inline void fun( int argc, uint64_t args[10] ) {
+    assert( argc == 4 && "remember to call link_blocks before simulating" );
+    struct command *prog = (struct command *)args[argc - 2];
+    struct command **p = (struct command **)args[argc - 1];
+    if( !args[1] ) { // only jumps to end if call arg is 0
+        *p = prog + args[0];
+    } else { // sets call arg to 0 so it doesn't get auto-triggered
+        (*p)->args[1] = 0;
+    }
+    return;
+}
+
+inline void call( int argc, uint64_t args[10] ) {
+    struct command *prog = (struct command *)args[argc - 2];
+    struct command **p = (struct command **)args[argc - 1];
+    *csp++ = *p - prog;
+    *p = prog + args[0];
+    (*p)->args[1] = 1; // let fun know that it is being called
+    return;
+}
+
+inline void ret( int argc, uint64_t args[10] ) {
+    struct command *prog = (struct command *)args[argc - 2];
+    struct command **p = (struct command **)args[argc - 1];
+    *p = prog + *--csp;
+    return;
+}
+
 inline void end() {
     return;
 }
@@ -292,10 +353,19 @@ uint64_t label_poses[MAXLABELS];
 uint64_t n_labels = 0;
 
 enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount );
+
+func func_head = {
+    .pos = 0,
+    .next = NULL
+};
+
+void add_to_func_list( uint64_t pos, const char *name );
+uint64_t find_func_by_name( const char *name, uint8_t *foundfunc );
 // TODO: different block syntax because I don't like end
 // Reads fname for tokens and parses tokens to create program out of commands
 struct command *read_program_from_file( const char *fname ) {
-    assert(NUM_OPS == 12 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 15 && "Unhandled operations in simulation mode");
+    void free_funcs();
 
     void second_pass( const char *fname, FILE *f, struct command *program );
     int is_label( char* word );
@@ -317,6 +387,7 @@ struct command *read_program_from_file( const char *fname ) {
 
     uint64_t lineno = 1; // Keeps track of the line of tokens
     uint64_t temp; // temporarily holds position of pp relative to prog
+    uint8_t tempbool;
 
     while( tokenize( f, &lineno ) != EOF ) {
         switch( tt ) {
@@ -355,10 +426,29 @@ struct command *read_program_from_file( const char *fname ) {
                 label_poses[n_labels++] = pp - prog; // set label pos to current op - will be incremented to next op
             } else if( !strcmp(tok, "goto") ) {
                 if( tokenize( f, &lineno ) != WORD ) {
-                    printf( "%s:%lu: Error: goto: %s is not a valid label name", fname, lineno, tok );
+                    printf( "%s:%lu: Error: goto: %s is not a valid label name\n", fname, lineno, tok );
                     exit(1);
                 }
                 *pp++ = goto_label_op( 0 );
+            } else if( !strcmp(tok, "fun") ) {
+                if( tokenize( f, &lineno ) != WORD ) {
+                    printf( "%s:%lu: Error: fun: %s is not a valid function name\n", fname, lineno, tok );
+                    exit(1);
+                }
+                find_func_by_name( tok, &tempbool );
+                if( tempbool ) {
+                    printf( "%s:%lu: Error: fun: %s is already defined\n", fname, lineno, tok );
+                }
+                add_to_func_list( pp - prog, tok );
+                *pp++ = fun_op( 0 );
+            } else if( !strcmp(tok, "call") ) {
+                if( tokenize( f, &lineno ) != WORD ) {
+                    printf( "%s:%lu: Error: call: %s is not a valid function name\n", fname, lineno, tok );
+                    exit(1);
+                }
+                *pp++ = call_op( 0 );
+            } else if( !strcmp(tok, "ret") ) {
+                *pp++ = ret_op();
             } else {
                 printf( "%s:%lu: Error: word %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
@@ -387,20 +477,27 @@ struct command *read_program_from_file( const char *fname ) {
     } // if there is no exit statement in the program, we just add one ourselves at the end
     *pp = program_end_op(); // Makes sure the block linker doesn't go further than it needs to by signifying end of program
     second_pass( fname, f, prog );
+    free_funcs();
     return prog;
 }
 
 // passes through program and then file if necessary a second time, to make sure goto can see labels ahead of the command. TODO: Merge with the other second program passes
 void second_pass( const char *fname, FILE *f, struct command *program ) {
+    uint8_t foundfunc = 0;
     fseek( f, 0, SEEK_SET ); // Go back to start of file
-    uint64_t lineno = 1;
+    uint64_t gotolineno, calllineno;
+    calllineno = gotolineno = 1;
     register uint8_t label_found; // boolean that is set if corresponding label to goto is found
+    fpos_t gotopos, callpos;
+    fgetpos( f, &gotopos );
+    fgetpos( f, &callpos );
 
     while( program->op != OP_PROGRAM_END ) {
         if( program->op == OP_GOTO ) {
-            while( tokenize( f, &lineno ) != EOF ) { // go through file until the corresponding goto is found - first goto stops at first occurence and so on
+            fsetpos( f, &gotopos );
+            while( tokenize( f, &gotolineno ) != EOF ) { // go through file until the corresponding goto is found - first goto stops at first occurence and so on
                 if( tt == WORD && !strcmp( tok, "goto" ) ) {
-                    tokenize( f, &lineno ); // get the goto label
+                    tokenize( f, &gotolineno ); // get the goto label
                     for( uint64_t i = 0; i < n_labels; i++ ) { // go through labels
                         if( !strcmp( tok, labels[i] ) ) { // does the label after goto match any known labels?
                             *program = goto_label_op( label_poses[i] ); // if yes, link goto to corresponding label pos
@@ -409,10 +506,25 @@ void second_pass( const char *fname, FILE *f, struct command *program ) {
                         }
                     }
                     if( !label_found ) {
-                        printf( "%s:%lu: error: goto: %s label doesn't exist", fname, lineno, tok );
+                        printf( "%s:%lu: error: goto: %s label doesn't exist", fname, gotolineno, tok );
                         exit(1);
                     }
-                    break; // if temp, break the tokenizing loop
+                    fgetpos( f, &gotopos );
+                    break; // if  label found, break out of loop
+                }
+            }
+        } else if( program->op == OP_CALL ) {
+            fsetpos( f, &callpos );
+            while( tokenize( f, &calllineno ) != EOF ) {
+                if( tt == WORD && !strcmp( tok, "call" ) ) {
+                    tokenize( f, &calllineno );
+                    *program = call_op( find_func_by_name( tok, &foundfunc ) );
+                    if( !foundfunc ) {
+                        printf( "%s:%lu: error: call: function %s doesn't exist", fname, calllineno, tok );
+                        exit(1);
+                    }
+                    fgetpos( f, &callpos );
+                    break;
                 }
             }
         }
@@ -432,7 +544,7 @@ enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount ) {
 
     // Does token start with an alphabetic character? Then it must be a name
     if( isalpha( c ) ) {
-        for( *p++ = c; ( isalnum( c = fgetc( f ) ) || c == ':' ) && p - tok < MAXTOK - 1; ) // copy c to tok as long as c is alphanumeric or : and we haven't exceeded max length
+        for( *p++ = c; ( isalnum( c = fgetc( f ) ) || c == ':' || c == '_' ) && p - tok < MAXTOK - 1; ) // copy c to tok as long as c is alphanumeric or : or _
             *p++ = c;
 
         *p = '\0'; // null-termination
@@ -473,28 +585,106 @@ int is_label( char *word ) {
 
 // Link commands that start a block to corresponding end commands in the program
 void link_blocks( struct command *prog ) {
-    assert(NUM_OPS == 12 && "Unhandled operations in simulation mode - only need to add block ops here");
+    assert(NUM_OPS == 15 && "Unhandled operations in simulation mode - only need to add block ops here");
+    char *find_func_by_pos( uint64_t pos );
     struct command *p = prog;
     uint64_t ifs[IF_STACK_SIZE];
     uint64_t *s = ifs;
+    uint64_t fun = 0;
+    uint8_t in_fun = 0;
     while( p->op != OP_PROGRAM_END ) {
         if( p->op == OP_IF ) {
             *s++ = p - prog; // add the if to if stack
-        }
-        else if( p->op == OP_END ) {
-            *( prog + *--s ) = if_op( p - prog ); // pop if from if stack and set it to point to the adress of end op
-            assert( ( prog + *s )->op == OP_IF && "For now, only if can be ended" );
+        } else if ( p->op == OP_FUN ) {
+            if( in_fun ) {
+                printf( "Error: cannot define function inside other function\n" );
+                exit(1);
+            }
+            in_fun = 1;
+            fun = p - prog;
+        } else if( p->op == OP_END ) {
+            if( s != ifs ) {
+                *( prog + *--s ) = if_op( p - prog ); // pop if from if stack and set it to point to the adress of end op
+                assert( ( prog + *s )->op == OP_IF && "For now, only if can be put in the if stack" );
+            } else if( in_fun ) {
+                *(prog + fun) = fun_op( p - prog );
+                in_fun = 0;
+                fun = 0;
+            } else {
+                printf( "Error: end with no corresponding block start\n" );
+                exit(1);
+            }
         }
         ++p;
     }
-    if( (s - ifs) ) {
-        printf( "Error: if(s) missing an end block" );
+    if( s - ifs ) {
+        printf( "Error: if(s) missing an end block\n" );
         exit( 1 );
+    }
+    if( in_fun ) {
+        printf( "Error: fun %s missing an end block\n", find_func_by_pos( fun ) );
+        exit(1);
     }
     return;
 }
 
-void print_help( const char* progname ) {
+void add_to_func_list( uint64_t pos, const char *name ) {
+    func *f = &func_head;
+    while( f->next )
+        f = f->next;
+    f->next = (func *)malloc( sizeof(func) );
+    strncpy( f->next->name, name, MAXTOK );
+    f->next->pos = pos;
+    f->next->next = NULL;
+    return;
+}
+
+uint64_t find_func_by_name( const char *name, uint8_t *foundfunc ) {
+    func *f = func_head.next;
+    while( f ) {
+        if( !strcmp( f->name, name ) ) {
+            *foundfunc = 1;
+            return f->pos;
+        }
+        f = f->next;
+    }
+    *foundfunc = 0;
+    return 0;
+}
+
+void print_funcs() {
+    func *f = func_head.next;
+    while( f ) {
+        printf( "element: %s\n", f->name );
+        f = f->next;
+    }
+}
+
+char *find_func_by_pos( uint64_t pos ) {
+    func *f = &func_head;
+    while( f->next ) {
+        if( f->pos == pos ) {
+            return f->name;
+        }
+        f = f->next;
+    }
+    return NULL;
+}
+
+void free_funcs() {
+    if( !func_head.next )
+        return;
+    func *f = func_head.next;
+    func *next;
+    while( f ) {
+        next = f->next;
+        free( f );
+        f = next;
+    }
+    return;
+}
+
+void print_help( const char *progname ) {
     printf( "Usage: %s [ARGS]\n", progname );
     printf( "    %s <filename>\truns the given file with the plang interpreter\n", progname );
     return;

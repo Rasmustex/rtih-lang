@@ -1,22 +1,24 @@
 # This program prints the fibonacci sequence up until and including 6765
-# It also demonstrates how goto could be used for the creation of routines
+# It also demonstrates how goto for loop creation and how to make and call functions
 
-goto fib
-ret:
-
-# Imagine some code here that depends on the side effects of fib on the stack
-
+call fib
 0 exit
 
-fib:
-0 dup . 1 dup .
-loop:
-dup2
-+
-dup
-.
-dup
-6765 = if
-goto ret
+fun fib
+    0 dup . 1 dup .
+    call rest_of_fib
+    ret
 end
-goto loop 
+
+fun rest_of_fib
+    loop:
+        dup2
+        +
+        dup
+        .
+        dup
+        6765 = if
+            ret
+        end
+    goto loop
+end
