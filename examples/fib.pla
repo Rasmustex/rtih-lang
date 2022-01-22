@@ -15,10 +15,10 @@ fun rest_of_fib
         dup2
         +
         dup
-        .
-        dup
-        6765 = if
+        10000 > if
             ret
         end
-    goto loop
+        dup
+        .
+        goto loop
 end

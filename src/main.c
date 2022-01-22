@@ -27,6 +27,8 @@ enum OP {
     OP_DUMP,
     OP_EXIT,
     OP_EQ,
+    OP_LT,
+    OP_GT,
     OP_DUP,
     OP_SWAP,
     OP_IF,
@@ -108,6 +110,8 @@ void dump();
 void swap( int argc, uint64_t args[10] );
 void exit_program();
 void eq();
+void lt();
+void gt();
 void dup_stack( int argc, uint64_t args[10] );
 void iff( int argc, uint64_t args[10] );
 void goto_label( int argc, uint64_t args[10] );
@@ -118,13 +122,15 @@ void end();
 
 // maps operations to their corresponding spots in the operation array
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
-    assert(NUM_OPS == 15 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 17 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
     op[OP_DUMP]  = dump;
     op[OP_EXIT]  = exit_program;
     op[OP_EQ]    = eq;
+    op[OP_LT]    = lt;
+    op[OP_GT]    = gt;
     op[OP_DUP]   = dup_stack;
     op[OP_SWAP]  = swap;
     op[OP_IF]    = iff;
@@ -172,6 +178,8 @@ struct command dump_op( void )                   { return make_op( OP_DUMP, 0, N
 struct command exit_program_op( void )           { return make_op( OP_EXIT, 0, NULL ); }
 // returns command with OP_EQ
 struct command eq_op( void )                     { return make_op( OP_EQ, 0, NULL ); }
+struct command lt_op(void)                       { return make_op(OP_LT, 0, NULL); }
+struct command gt_op(void)                       { return make_op(OP_GT, 0, NULL); }
 // returns command with OP_DUP and amount of elements to dup as args[0]
 struct command dup_stack_op( uint64_t elements ) { return make_op( OP_DUP, 1, &elements ); }
 // returns command with OP_SWAP and amount of elements to swap
@@ -199,7 +207,7 @@ struct command call_op( uint64_t addr )          {
     return make_op( OP_CALL, 3, args );
 }
 // returns a return operation
-struct command ret_op()                          {
+struct command ret_op( void )                          {
     uint64_t args[2] = { 0, 0 };
     return make_op( OP_RET, 2, args );
 }
@@ -225,7 +233,7 @@ inline void push( int argc, uint64_t args[] ) {
 }
 
 // adds the 2 top elements of stack
-inline void plus() {
+inline void plus( void ) {
     register uint64_t temp = POP_SIM;
     temp += POP_SIM;
     PUSH_SIM(temp);
@@ -233,7 +241,7 @@ inline void plus() {
 }
 
 // subtracts top of stack from 2nd element on stack and pushes result
-inline void minus() {
+inline void minus( void ) {
     register uint64_t temp = POP_SIM;
     temp = POP_SIM - temp;
     PUSH_SIM(temp);
@@ -241,21 +249,35 @@ inline void minus() {
 }
 
 // prints top element of stack as uint64
-inline void dump() {
+inline void dump( void ) {
     printf( "%lu\n", POP_SIM );
     return;
 }
 
 // exits program with the top element on the stack as exit code
-inline void exit_program() {
+inline void exit_program( void ) {
     exit(POP_SIM);
     return;
 }
 
 // pops 2 elements from stack and pushes 1 if equal, 0 if not
-inline void eq() {
+inline void eq( void ) {
     register uint64_t temp = POP_SIM;
     temp = ( temp == POP_SIM );
+    PUSH_SIM(temp);
+    return;
+}
+
+inline void lt( void ) {
+    register uint64_t temp = POP_SIM;
+    temp = POP_SIM < temp;
+    PUSH_SIM(temp);
+    return;
+}
+
+inline void gt( void ) {
+    register uint64_t temp = POP_SIM;
+    temp = POP_SIM > temp;
     PUSH_SIM(temp);
     return;
 }
@@ -338,7 +360,7 @@ inline void ret( int argc, uint64_t args[10] ) {
     return;
 }
 
-inline void end() {
+inline void end( void ) {
     return;
 }
 
@@ -364,7 +386,7 @@ uint64_t find_func_by_name( const char *name, uint8_t *foundfunc );
 // TODO: different block syntax because I don't like end
 // Reads fname for tokens and parses tokens to create program out of commands
 struct command *read_program_from_file( const char *fname ) {
-    assert(NUM_OPS == 15 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 17 && "Unhandled operations in simulation mode");
     void free_funcs();
 
     void second_pass( const char *fname, FILE *f, struct command *program );
@@ -405,6 +427,12 @@ struct command *read_program_from_file( const char *fname ) {
             break;
         case '=':
             *pp++ = eq_op();
+            break;
+        case '<':
+            *pp++ = lt_op();
+            break;
+        case '>':
+            *pp++ = gt_op();
             break;
         case WORD: // if word, check if exit, and then exit. Other words yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
@@ -585,7 +613,7 @@ int is_label( char *word ) {
 
 // Link commands that start a block to corresponding end commands in the program
 void link_blocks( struct command *prog ) {
-    assert(NUM_OPS == 15 && "Unhandled operations in simulation mode - only need to add block ops here");
+    assert(NUM_OPS == 17 && "Unhandled operations in simulation mode - only need to add block ops here");
     char *find_func_by_pos( uint64_t pos );
     struct command *p = prog;
     uint64_t ifs[IF_STACK_SIZE];
