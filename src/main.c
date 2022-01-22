@@ -31,6 +31,8 @@ enum OP {
     OP_GT,
     OP_DUP,
     OP_SWAP,
+    OP_DROP,
+    OP_ROT,
     OP_IF,
     OP_END,
     OP_GOTO,
@@ -107,22 +109,26 @@ void push( int argc, uint64_t args[10] );
 void plus();
 void minus();
 void dump();
-void swap( int argc, uint64_t args[10] );
 void exit_program();
 void eq();
 void lt();
 void gt();
 void dup_stack( int argc, uint64_t args[10] );
+void swap( int argc, uint64_t args[10] );
+// drops the top element from stack
+void drop();
+// rotates top 3 elements of stack left with wraparound
+void rot();
 void iff( int argc, uint64_t args[10] );
+void end();
 void goto_label( int argc, uint64_t args[10] );
 void fun( int argc, uint64_t args[10] );
 void call( int argc, uint64_t args[10] );
 void ret( int argc, uint64_t args[10] );
-void end();
 
 // maps operations to their corresponding spots in the operation array
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
-    assert(NUM_OPS == 17 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 19 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
@@ -133,6 +139,8 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_GT]    = gt;
     op[OP_DUP]   = dup_stack;
     op[OP_SWAP]  = swap;
+    op[OP_DROP]  = drop;
+    op[OP_ROT]   = rot;
     op[OP_IF]    = iff;
     op[OP_GOTO]  = goto_label;
     op[OP_FUN]   = fun;
@@ -184,6 +192,8 @@ struct command gt_op(void)                       { return make_op(OP_GT, 0, NULL
 struct command dup_stack_op( uint64_t elements ) { return make_op( OP_DUP, 1, &elements ); }
 // returns command with OP_SWAP and amount of elements to swap
 struct command swap_op( uint64_t elements )      { return make_op( OP_SWAP, 1, &elements ); }
+struct command drop_op( void )                   { return make_op( OP_DROP, 0, NULL ); }
+struct command rot_op( void )                   { return make_op( OP_ROT, 0, NULL ); }
 // returns if op with address of end of block and 3 empty spaces
 struct command if_op( uint64_t addr )            {
     uint64_t args[4] = { addr, 0, 0, 0 };
@@ -314,6 +324,20 @@ inline void swap( int argc, uint64_t args[10] ) {
     return;
 }
 
+inline void drop( void ) {
+    --sp;
+    return;
+}
+
+inline void rot( void ) {
+    register uint64_t temp1 = *(sp - 1);
+    register uint64_t temp2 = *(sp - 2);
+    *(sp - 1) = *(sp - 3);
+    *(sp - 2) = temp1;
+    *(sp - 3) = temp2;
+    return;
+}
+
 // goes to corresponding end(args[0]) when condition is false, otherwise falls through
 inline void iff( int argc, uint64_t args[10] ) {
     assert( argc == 4 && "remember to call link_blocks before simulating" );
@@ -386,7 +410,7 @@ uint64_t find_func_by_name( const char *name, uint8_t *foundfunc );
 // TODO: different block syntax because I don't like end
 // Reads fname for tokens and parses tokens to create program out of commands
 struct command *read_program_from_file( const char *fname ) {
-    assert(NUM_OPS == 17 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 19 && "Unhandled operations in simulation mode");
     void free_funcs();
 
     void second_pass( const char *fname, FILE *f, struct command *program );
@@ -477,6 +501,10 @@ struct command *read_program_from_file( const char *fname ) {
                 *pp++ = call_op( 0 );
             } else if( !strcmp(tok, "ret") ) {
                 *pp++ = ret_op();
+            } else if ( !strcmp(tok, "drop") ) {
+                *pp++ = drop_op();
+            } else if ( !strcmp(tok, "rot") ) {
+                *pp++ = rot_op();
             } else {
                 printf( "%s:%lu: Error: word %s not recognised, and custom names not implemented\n", fname, lineno, tok );
                 exit(1);
@@ -613,7 +641,7 @@ int is_label( char *word ) {
 
 // Link commands that start a block to corresponding end commands in the program
 void link_blocks( struct command *prog ) {
-    assert(NUM_OPS == 17 && "Unhandled operations in simulation mode - only need to add block ops here");
+    assert(NUM_OPS == 19 && "Unhandled operations in simulation mode - only need to add block ops here");
     char *find_func_by_pos( uint64_t pos );
     struct command *p = prog;
     uint64_t ifs[IF_STACK_SIZE];
