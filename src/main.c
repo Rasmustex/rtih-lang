@@ -110,6 +110,27 @@ int sim( struct command *program ) {
     return 0;
 }
 
+enum DATA_TYPE {
+    I64,
+    UI64,
+    F64,
+    PTR64,
+    PTRU64,
+    PTR8
+};
+
+struct sim_stack_data {
+    enum DATA_TYPE type;
+    union {
+        int64_t i;
+        uint64_t ui;
+        double f;
+        int64_t *ip;
+        uint64_t *up;
+        char* str;
+    };
+};
+
 void push( int argc, uint64_t args[10] );
 void plus();
 void minus();
@@ -432,7 +453,6 @@ func func_head = {
 
 void add_to_func_list( uint64_t pos, const char *name );
 uint64_t find_func_by_name( const char *name, uint8_t *foundfunc );
-// TODO: different block syntax because I don't like end
 // Reads fname for tokens and parses tokens to create program out of commands
 struct command *read_program_from_file( const char *fname ) {
     assert(NUM_OPS == 20 && "Unhandled operations in simulation mode");
