@@ -4,21 +4,21 @@
 call fib
 0 exit
 
-fun fib
+fun fib {
     0 dup . 1 dup .
     call rest_of_fib
     ret
-end
+}
 
-fun rest_of_fib
+fun rest_of_fib {
     loop:
         dup2
         +
         dup
-        10000 > if
+        10000 > if {
             ret
-        end
+        }
         dup
         .
         goto loop
-end
+}

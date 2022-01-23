@@ -49,6 +49,8 @@ enum TOK_TYPE {
     NUM,
     WORD,
     OP,
+    SCOPE_OPEN,
+    SCOPE_CLOSE,
     COMMENT
 };
 
@@ -94,9 +96,11 @@ int sim( struct command *program ) {
     void link_blocks( struct command *program );
     void prep_jumping_commands( struct command *program, struct command **p );
     void (*op[NUM_OPS])( int argc, uint64_t args[10] );
+    void free_funcs( void );
     struct command *p = program;
     sim_setup_function_array( op );
     link_blocks( program );
+    free_funcs();
     prep_jumping_commands( program, &p );
 
     while( 1 ) {
@@ -432,7 +436,7 @@ uint64_t find_func_by_name( const char *name, uint8_t *foundfunc );
 // Reads fname for tokens and parses tokens to create program out of commands
 struct command *read_program_from_file( const char *fname ) {
     assert(NUM_OPS == 20 && "Unhandled operations in simulation mode");
-    void free_funcs();
+    char func_name[MAXTOK];
 
     void second_pass( const char *fname, FILE *f, struct command *program );
     int is_label( char* word );
@@ -479,6 +483,13 @@ struct command *read_program_from_file( const char *fname ) {
         case '>':
             *pp++ = gt_op();
             break;
+        case SCOPE_OPEN:
+            printf( "%s:%lu: '%s' error: previous operator is not a valid scope opener\n", fname, lineno, tok );
+            exit(1);
+            break;
+        case SCOPE_CLOSE:
+            *pp++ = end_op();
+            break;
         case WORD: // if word, check if exit, and then exit. Other words yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
                 *pp++ = exit_program_op();
@@ -492,10 +503,21 @@ struct command *read_program_from_file( const char *fname ) {
                 *pp++ = swap_op( 2 );
             } else if( !strcmp( tok, "if" ) ) {
                 *pp++ = if_op( -1 );
+                if( tokenize( f, &lineno ) != SCOPE_OPEN ) {
+                    printf( "%s:%lu: error: 'if' opens a scope, so you need to use { to indicate the start of this scope\n", fname, lineno );
+                    exit(1);
+                }
             } else if( !strcmp( tok, "else" ) ) {
-                *pp++ = else_op( -1 );
-            } else if(!strcmp( tok, "end" ) ) {
-                *pp++ = end_op();
+                if( (pp - 1)->op != OP_END ) {
+                    printf( "%s:%lu: error: you can only use operator '%s' right after the closing of an if scope\n", fname, lineno, tok );
+                    exit(1);
+                }
+                *--pp = else_op( -1 );
+                ++pp;
+                if( tokenize( f, &lineno ) != SCOPE_OPEN ) {
+                    printf( "%s:%lu: error: 'else' opens a scope, so you need to use { to indicate the start of this scope\n", fname, lineno );
+                    exit(1);
+                }
             } else if( is_label( tok ) ) {
                 strncpy( labels[n_labels], tok, 100 ); // copy label name into labels table
                 label_poses[n_labels++] = pp - prog; // set label pos to current op - will be incremented to next op
@@ -513,8 +535,14 @@ struct command *read_program_from_file( const char *fname ) {
                 find_func_by_name( tok, &tempbool );
                 if( tempbool ) {
                     printf( "%s:%lu: Error: fun: %s is already defined\n", fname, lineno, tok );
+                    exit(1);
                 }
-                add_to_func_list( pp - prog, tok );
+                strncpy( func_name, tok, MAXTOK );
+                if( tokenize( f, &lineno ) != SCOPE_OPEN ) {
+                    printf( "%s:%lu: error: function declaration opens a scope, so you need to use { to indicate the start of this scope\n", fname, lineno );
+                    exit(1);
+                }
+                add_to_func_list( pp - prog, func_name );
                 *pp++ = fun_op( 0 );
             } else if( !strcmp(tok, "call") ) {
                 if( tokenize( f, &lineno ) != WORD ) {
@@ -556,7 +584,6 @@ struct command *read_program_from_file( const char *fname ) {
     } // if there is no exit statement in the program, we just add one ourselves at the end
     *pp = program_end_op(); // Makes sure the block linker doesn't go further than it needs to by signifying end of program
     second_pass( fname, f, prog );
-    free_funcs();
     return prog;
 }
 
@@ -641,6 +668,14 @@ enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount ) {
             ;
         *linecount += (c == '\n');
         return tt = COMMENT;
+    } else if (c == '{') {
+        *p++ = c;
+        *p = '\0';
+        return tt = SCOPE_OPEN;
+    } else if (c == '}') {
+        *p++ = c;
+        *p = '\0';
+        return tt = SCOPE_CLOSE;
     } else {
         *p++ = c;
         *p = '\0';
@@ -678,7 +713,7 @@ void link_blocks( struct command *prog ) {
             *is++ = p - prog; // add the if to if stack
         } else if ( p->op == OP_FUN ) {
             if( in_fun ) {
-                printf( "Error: cannot define function inside other function\n" );
+                printf( "Error: fun %s cannot define function inside other function\n", find_func_by_pos( p - prog ) );
                 exit(1);
             }
             in_fun = 1;
@@ -703,18 +738,22 @@ void link_blocks( struct command *prog ) {
                 in_fun = 0;
                 fun = 0;
             } else {
-                printf( "Error: end with no corresponding block start\n" );
+                printf( "Error: scope close with no corresponding open\n" );
                 exit(1);
             }
         }
         ++p;
     }
     if( is - ifs ) {
-        printf( "Error: if(s) missing an end block\n" );
+        printf( "Error: unclosed if block(s)\n" );
+        exit( 1 );
+    }
+    if( es - elses ) {
+        printf( "Error: unclosed else block(s)\n" );
         exit( 1 );
     }
     if( in_fun ) {
-        printf( "Error: fun %s missing an end block\n", find_func_by_pos( fun ) );
+        printf( "Error: fun %s has not been closed\n", find_func_by_pos( fun ) );
         exit(1);
     }
     return;
@@ -744,7 +783,7 @@ uint64_t find_func_by_name( const char *name, uint8_t *foundfunc ) {
     return 0;
 }
 
-void print_funcs() {
+void print_funcs( void ) {
     func *f = func_head.next;
     while( f ) {
         printf( "element: %s\n", f->name );
@@ -754,7 +793,7 @@ void print_funcs() {
 
 char *find_func_by_pos( uint64_t pos ) {
     func *f = &func_head;
-    while( f->next ) {
+    while( f ) {
         if( f->pos == pos ) {
             return f->name;
         }
@@ -763,7 +802,7 @@ char *find_func_by_pos( uint64_t pos ) {
     return NULL;
 }
 
-void free_funcs() {
+void free_funcs( void ) {
     if( !func_head.next )
         return;
     func *f = func_head.next;
