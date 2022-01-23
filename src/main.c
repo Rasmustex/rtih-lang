@@ -34,6 +34,7 @@ enum OP {
     OP_DROP,
     OP_ROT,
     OP_IF,
+    OP_ELSE,
     OP_END,
     OP_GOTO,
     OP_FUN,
@@ -120,6 +121,7 @@ void drop();
 // rotates top 3 elements of stack left with wraparound
 void rot();
 void iff( int argc, uint64_t args[10] );
+void elsee( int argc, uint64_t args[10] );
 void end();
 void goto_label( int argc, uint64_t args[10] );
 void fun( int argc, uint64_t args[10] );
@@ -128,7 +130,7 @@ void ret( int argc, uint64_t args[10] );
 
 // maps operations to their corresponding spots in the operation array
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] ) ) {
-    assert(NUM_OPS == 19 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 20 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
@@ -142,6 +144,7 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
     op[OP_DROP]  = drop;
     op[OP_ROT]   = rot;
     op[OP_IF]    = iff;
+    op[OP_ELSE]  = elsee;
     op[OP_GOTO]  = goto_label;
     op[OP_FUN]   = fun;
     op[OP_CALL]  = call;
@@ -153,7 +156,7 @@ void sim_setup_function_array( void (*op[NUM_OPS])( int argc, uint64_t args[10] 
 void prep_jumping_commands( struct command *program, struct command **p ) {
     struct command *prog = program;
     while( prog->op != OP_PROGRAM_END ) {
-        if( prog->op == OP_IF || prog->op == OP_GOTO || prog->op == OP_FUN || prog->op == OP_CALL || prog->op == OP_RET ) {
+        if( prog->op == OP_IF || prog->op == OP_ELSE || prog->op == OP_GOTO || prog->op == OP_FUN || prog->op == OP_CALL || prog->op == OP_RET ) {
             prog->args[prog->argc - 2] = (uint64_t)program;
             prog->args[prog->argc - 1] = (uint64_t)p;
         }
@@ -198,6 +201,10 @@ struct command rot_op( void )                   { return make_op( OP_ROT, 0, NUL
 struct command if_op( uint64_t addr )            {
     uint64_t args[4] = { addr, 0, 0, 0 };
     return make_op( OP_IF, (addr != -1) * 4, args );
+}
+struct command else_op( uint64_t addr )          {
+    uint64_t args[4] = { addr, 0, 0, 0 };
+    return make_op( OP_ELSE, (addr != -1) * 4, args );
 }
 // returns command with OP_END to indicate end of block
 struct command end_op( void )                    { return make_op( OP_END, 0, NULL ); }
@@ -343,8 +350,22 @@ inline void iff( int argc, uint64_t args[10] ) {
     assert( argc == 4 && "remember to call link_blocks before simulating" );
     struct command *prog = (struct command *)args[argc - 2];
     struct command **p = (struct command **)args[argc - 1];
-    if( !POP_SIM )
+    if( !POP_SIM ) {
         *p = prog + args[0];
+        if( (*p)->op == OP_ELSE )
+            (*p)->args[1] = 1;
+    }
+    return;
+}
+
+inline void elsee( int argc, uint64_t args[10] ) {
+    assert( argc == 4 && "remember to call link_blocks before simulating" );
+    struct command *prog = (struct command *)args[argc - 2];
+    struct command **p = (struct command **)args[argc - 1];
+    if( !args[1] )
+        *p = prog + args[0];
+    else
+        args[1] = 0;
     return;
 }
 
@@ -410,7 +431,7 @@ uint64_t find_func_by_name( const char *name, uint8_t *foundfunc );
 // TODO: different block syntax because I don't like end
 // Reads fname for tokens and parses tokens to create program out of commands
 struct command *read_program_from_file( const char *fname ) {
-    assert(NUM_OPS == 19 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 20 && "Unhandled operations in simulation mode");
     void free_funcs();
 
     void second_pass( const char *fname, FILE *f, struct command *program );
@@ -471,6 +492,8 @@ struct command *read_program_from_file( const char *fname ) {
                 *pp++ = swap_op( 2 );
             } else if( !strcmp( tok, "if" ) ) {
                 *pp++ = if_op( -1 );
+            } else if( !strcmp( tok, "else" ) ) {
+                *pp++ = else_op( -1 );
             } else if(!strcmp( tok, "end" ) ) {
                 *pp++ = end_op();
             } else if( is_label( tok ) ) {
@@ -641,16 +664,18 @@ int is_label( char *word ) {
 
 // Link commands that start a block to corresponding end commands in the program
 void link_blocks( struct command *prog ) {
-    assert(NUM_OPS == 19 && "Unhandled operations in simulation mode - only need to add block ops here");
+    assert(NUM_OPS == 20 && "Unhandled operations in simulation mode - only need to add block ops here");
     char *find_func_by_pos( uint64_t pos );
     struct command *p = prog;
     uint64_t ifs[IF_STACK_SIZE];
-    uint64_t *s = ifs;
+    uint64_t elses[IF_STACK_SIZE];
+    uint64_t *is = ifs;
+    uint64_t *es = elses;
     uint64_t fun = 0;
     uint8_t in_fun = 0;
     while( p->op != OP_PROGRAM_END ) {
         if( p->op == OP_IF ) {
-            *s++ = p - prog; // add the if to if stack
+            *is++ = p - prog; // add the if to if stack
         } else if ( p->op == OP_FUN ) {
             if( in_fun ) {
                 printf( "Error: cannot define function inside other function\n" );
@@ -658,10 +683,21 @@ void link_blocks( struct command *prog ) {
             }
             in_fun = 1;
             fun = p - prog;
+        } else if( p->op == OP_ELSE ) {
+            if( is != ifs ) {
+                *( prog + *--is ) = if_op( p - prog );
+                *es++ = p - prog;
+            } else {
+                printf( "Error: only one else permitted per if\n" );
+                exit(1);
+            }
         } else if( p->op == OP_END ) {
-            if( s != ifs ) {
-                *( prog + *--s ) = if_op( p - prog ); // pop if from if stack and set it to point to the adress of end op
-                assert( ( prog + *s )->op == OP_IF && "For now, only if can be put in the if stack" );
+            if( es != elses ) {
+                *( prog + *--es ) = else_op( p - prog );
+                assert( ( prog + *es )->op == OP_ELSE && "For now, only else can be put in the else stack" );
+            } else if( is != ifs ) {
+                *( prog + *--is ) = if_op( p - prog ); // pop if from if stack and set it to point to the adress of end op
+                assert( ( prog + *is )->op == OP_IF && "For now, only if can be put in the if stack" );
             } else if( in_fun ) {
                 *(prog + fun) = fun_op( p - prog );
                 in_fun = 0;
@@ -673,7 +709,7 @@ void link_blocks( struct command *prog ) {
         }
         ++p;
     }
-    if( s - ifs ) {
+    if( is - ifs ) {
         printf( "Error: if(s) missing an end block\n" );
         exit( 1 );
     }
