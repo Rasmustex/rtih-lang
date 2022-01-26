@@ -24,8 +24,6 @@ enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount ) {
         ungetc( c, f );
         return tt = WORD;
     } else if( isdigit(c) || c == '-' ) {
-        if( c == '.' )
-            ++dotcounter;
         for( *p++ = c; (isdigit( c = fgetc( f ) ) || c == '.' || c == 'U' || c == 'u' ) && p - tok < MAXTOK - 1; ) {
             if( c == '.' )
                 ++dotcounter;
@@ -40,8 +38,6 @@ enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount ) {
         ungetc( c, f );
         if( !strcmp( tok, "-" ) )
             return tt = '-';
-        else if( !strcmp( tok, "." ) )
-            return tt = '.';
         else if( dotcounter ) {
             if( *(p - 2) == 'u' || *(p - 2) == 'U' ) {
                 printf( "error: %s: floating point numbers cannot be unsigned\n", tok );

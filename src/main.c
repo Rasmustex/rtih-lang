@@ -5,8 +5,6 @@ only have an interpreted version
  * TODO: Better error printing and -handling
  * TODO: Tidy op args
  * TODO: More operations
- * TODO: Data types
- * TODO: Pointers
  * TODO: Strings
  */
 

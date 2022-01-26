@@ -22,9 +22,9 @@ typedef struct sim_stack_data {
 } data;
 
 /*
-    * accepts a data type and some data (HAS TO MATCH)
-    * and returns a stack element with that data and type
-    */
+ * accepts a data type and some data (HAS TO MATCH)
+ * and returns a stack element with that data and type
+ */
 data make_data( type t, ... );
 // adds two data blocks and returns the result as a data block
 data add_data( data a, data b );
