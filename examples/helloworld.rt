@@ -1,0 +1,10 @@
+'\n' 'd' 'l' 'r' 'o' 'w' ' ' 'o' 'l' dup 'e' 'h' 
+12
+print:
+    swap 
+    . 
+    1 - dup 
+    0 = if {
+        0 exit
+    }
+    goto print

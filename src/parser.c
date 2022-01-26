@@ -51,8 +51,29 @@ struct command *read_program_from_file( const char *fname ) {
 
     while( tokenize( f, &lineno ) != EOF ) {
         switch( tt ) {
-        case NUM: // If number, push
-            *pp++ = push_op( atol(tok) );
+        case INT:
+            *pp++ = push_op( make_data( I64, atol( tok ) ) );
+            break;
+        case UINT:
+            if( atol( tok ) < 0 ) {
+                printf( "%s:%lu: '%s' error: unsigned number cannot be negative\n", fname, lineno, tok );
+                exit(1);
+            }
+            *pp++ = push_op( make_data( U64, atol( tok ) ) );
+            break;
+        case FLOAT:
+            *pp++ = push_op( make_data( F64, atof( tok ) ) );
+            break;
+        case CHAR:
+            if( strnlen( tok, MAXTOK ) > 2 ) {
+                printf( "%s:%lu: '%s' error: cannot declare multiple character char\n", fname, lineno, tok );
+                exit(1);
+            }
+            if( !strcmp( tok, "\\n") ) {
+                *pp++ = push_op( make_data( U8, '\n' ) );
+            } else {
+                *pp++ = push_op( make_data( U8, tok[0] ) );
+            }
             break;
         case '+':
             *pp++ = plus_op();
@@ -83,15 +104,15 @@ struct command *read_program_from_file( const char *fname ) {
             if ( !strcmp( tok, "exit" ) ) {
                 *pp++ = exit_program_op();
             } else if( !strcmp( tok, "dup" ) ) {
-                *pp++ = dup_stack_op( 1 );
+                *pp++ = dup_stack_op( make_data( U64, 1 ) );
             } else if(!strcmp(tok, "dup2") ) {
-                *pp++ = dup_stack_op( 2 );
+                *pp++ = dup_stack_op( make_data( U64, 2 ) );
             } else if( !strcmp( tok, "swap" ) ) {
-                *pp++ = swap_op( 1 );
+                *pp++ = swap_op( make_data( U64, 1 ) );
             } else if( !strcmp( tok, "swap2" ) ) {
-                *pp++ = swap_op( 2 );
+                *pp++ = swap_op( make_data( U64, 2 ) );
             } else if( !strcmp( tok, "if" ) ) {
-                *pp++ = if_op( -1 );
+                *pp++ = if_op( make_data( U64, 0 ) );
                 if( tokenize( f, &lineno ) != SCOPE_OPEN ) {
                     printf( "%s:%lu: error: 'if' opens a scope, so you need to use { to indicate the start of this scope\n", fname, lineno );
                     exit(1);
@@ -101,7 +122,7 @@ struct command *read_program_from_file( const char *fname ) {
                     printf( "%s:%lu: error: you can only use operator '%s' right after the closing of an if scope\n", fname, lineno, tok );
                     exit(1);
                 }
-                *--pp = else_op( -1 );
+                *--pp = else_op( make_data( U64, 0 ) );
                 ++pp;
                 if( tokenize( f, &lineno ) != SCOPE_OPEN ) {
                     printf( "%s:%lu: error: 'else' opens a scope, so you need to use { to indicate the start of this scope\n", fname, lineno );
@@ -115,7 +136,7 @@ struct command *read_program_from_file( const char *fname ) {
                     printf( "%s:%lu: Error: goto: %s is not a valid label name\n", fname, lineno, tok );
                     exit(1);
                 }
-                *pp++ = goto_label_op( 0 );
+                *pp++ = goto_label_op( make_data( U64, 0 ) );
             } else if( !strcmp(tok, "fun") ) {
                 if( tokenize( f, &lineno ) != WORD ) {
                     printf( "%s:%lu: Error: fun: %s is not a valid function name\n", fname, lineno, tok );
@@ -132,13 +153,13 @@ struct command *read_program_from_file( const char *fname ) {
                     exit(1);
                 }
                 add_to_func_list( pp - prog, func_name );
-                *pp++ = fun_op( 0 );
+                *pp++ = fun_op( make_data( U64, 0 ) );
             } else if( !strcmp(tok, "call") ) {
                 if( tokenize( f, &lineno ) != WORD ) {
                     printf( "%s:%lu: Error: call: %s is not a valid function name\n", fname, lineno, tok );
                     exit(1);
                 }
-                *pp++ = call_op( 0 );
+                *pp++ = call_op( make_data( U64, 0 ) );
             } else if( !strcmp(tok, "ret") ) {
                 *pp++ = ret_op();
             } else if ( !strcmp(tok, "drop") ) {
@@ -168,7 +189,7 @@ struct command *read_program_from_file( const char *fname ) {
         }
     }
     if( (pp - 1)->op != OP_EXIT ) {
-        *pp++ = push_op(0);
+        *pp++ = push_op( make_data( U64, 0 ) );
         *pp++ = exit_program_op();
     } // if there is no exit statement in the program, we just add one ourselves at the end
     *pp = program_end_op(); // Makes sure the block linker doesn't go further than it needs to by signifying end of program

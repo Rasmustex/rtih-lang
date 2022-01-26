@@ -14,7 +14,6 @@ only have an interpreted version
 #include <stdio.h>
 #include <stdlib.h>
 #include <assert.h>
-#include "../include/datatypes.h"
 #include "../include/operations.h"
 #include "../include/parser.h"
 #include "../include/sim.h"

@@ -11,8 +11,8 @@ void prep_jumping_commands( struct command *program, struct command **p ) {
     struct command *prog = program;
     while( prog->op != OP_PROGRAM_END ) {
         if( prog->op == OP_IF || prog->op == OP_ELSE || prog->op == OP_GOTO || prog->op == OP_FUN || prog->op == OP_CALL || prog->op == OP_RET ) {
-            prog->args[prog->argc - 2] = (uint64_t)program;
-            prog->args[prog->argc - 1] = (uint64_t)p;
+            prog->args[prog->argc - 2].p = (void*)program;
+            prog->args[prog->argc - 1].p = (void*)p;
         }
         ++prog;
     }
@@ -43,7 +43,7 @@ void link_blocks( struct command *prog ) {
             fun = p - prog;
         } else if( p->op == OP_ELSE ) {
             if( is != ifs ) {
-                *( prog + *--is ) = if_op( p - prog );
+                *( prog + *--is ) = if_op( make_data( U64, p - prog ) );
                 *es++ = p - prog;
             } else {
                 printf( "Error: only one else permitted per if\n" );
@@ -51,13 +51,13 @@ void link_blocks( struct command *prog ) {
             }
         } else if( p->op == OP_END ) {
             if( es != elses ) {
-                *( prog + *--es ) = else_op( p - prog );
+                *( prog + *--es ) = else_op( make_data( U64, p - prog ) );
                 assert( ( prog + *es )->op == OP_ELSE && "For now, only else can be put in the else stack" );
             } else if( is != ifs ) {
-                *( prog + *--is ) = if_op( p - prog ); // pop if from if stack and set it to point to the adress of end op
+                *( prog + *--is ) = if_op( make_data( U64, p - prog ) ); // pop if from if stack and set it to point to the adress of end op
                 assert( ( prog + *is )->op == OP_IF && "For now, only if can be put in the if stack" );
             } else if( in_fun ) {
-                *(prog + fun) = fun_op( p - prog );
+                *(prog + fun) = fun_op( make_data( U64, p - prog ) );
                 in_fun = 0;
                 fun = 0;
             } else {
@@ -100,7 +100,7 @@ void second_pass( const char *fname, FILE *f, struct command *program ) {
                     tokenize( f, &gotolineno ); // get the goto label
                     for( uint64_t i = 0; i < n_labels; i++ ) { // go through labels
                         if( !strcmp( tok, labels[i] ) ) { // does the label after goto match any known labels?
-                            *program = goto_label_op( label_poses[i] ); // if yes, link goto to corresponding label pos
+                            *program = goto_label_op( make_data( U64, label_poses[i] ) ); // if yes, link goto to corresponding label pos
                             label_found = 1;
                             break;
                         }
@@ -118,7 +118,7 @@ void second_pass( const char *fname, FILE *f, struct command *program ) {
             while( tokenize( f, &calllineno ) != EOF ) {
                 if( tt == WORD && !strcmp( tok, "call" ) ) {
                     tokenize( f, &calllineno );
-                    *program = call_op( find_func_by_name( tok, &foundfunc ) );
+                    *program = call_op( make_data( U64, find_func_by_name( tok, &foundfunc ) ) );
                     if( !foundfunc ) {
                         printf( "%s:%lu: error: call: function %s doesn't exist", fname, calllineno, tok );
                         exit(1);

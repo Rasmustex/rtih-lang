@@ -36,13 +36,13 @@ enum OP {
 struct command {
     enum OP op;
     int argc;
-    uint64_t args[10];
+    data args[10];
 };
 /*
     * functions to generate operations for the program array - to be overhauled
     */
 // returns OP_PUSH command with args[0] as the item to be pushed
-struct command push_op( uint64_t x );
+struct command push_op( data x );
 struct command plus_op( void );
 struct command minus_op( void );
 struct command dump_op( void );
@@ -50,15 +50,15 @@ struct command exit_program_op( void );
 struct command eq_op( void );
 struct command lt_op( void );
 struct command gt_op( void );
-struct command dup_stack_op( uint64_t elements );
-struct command swap_op( uint64_t elements );
+struct command dup_stack_op( data elements );
+struct command swap_op( data elements );
 struct command drop_op( void );
 struct command rot_op( void );
-struct command if_op( uint64_t addr );
-struct command else_op( uint64_t addr );
+struct command if_op( data addr );
+struct command else_op( data addr );
 struct command end_op( void );
-struct command goto_label_op( uint64_t addr );
-struct command fun_op( uint64_t addr );
-struct command call_op( uint64_t addr );
+struct command goto_label_op( data addr );
+struct command fun_op( data addr );
+struct command call_op( data addr );
 struct command ret_op( void );
 struct command program_end_op( void );

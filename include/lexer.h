@@ -9,12 +9,16 @@
 #include <stdint.h>
 
 enum TOK_TYPE { // possible token types
-    NUM,
+    UINT,
+    INT,
+    FLOAT,
+    CHAR,
     WORD,
     OP,
     SCOPE_OPEN,
     SCOPE_CLOSE,
-    COMMENT
+    COMMENT,
+    TOK_ERROR
 };
 
 #define MAXTOK 100 // max token size

@@ -6,7 +6,7 @@
 
 
 int sim( struct command *program ) {
-    void (*op[NUM_OPS])( int argc, uint64_t args[10] );
+    void (*op[NUM_OPS])( int argc, data args[10] );
     struct command *p = program;
     sim_setup_function_array( op );
     prep_jumping_commands( program, &p );
