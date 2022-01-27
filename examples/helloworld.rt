@@ -2,7 +2,7 @@
 12
 print:
     swap 
-    . 
+    putc
     1 - dup 
     0 = if {
         0 exit

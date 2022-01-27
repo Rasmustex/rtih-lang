@@ -25,7 +25,7 @@ uint64_t label_poses[MAXLABELS];
 uint64_t n_labels; // initialize to 0
 
 struct command *read_program_from_file( const char *fname ) {
-    assert(NUM_OPS == 20 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 21 && "Unhandled operations in simulation mode");
     char func_name[MAXTOK];
 
     void second_pass( const char *fname, FILE *f, struct command *program );
@@ -99,6 +99,8 @@ struct command *read_program_from_file( const char *fname ) {
         case WORD: // if word, check if exit, and then exit. Other words yet to be implemented
             if ( !strcmp( tok, "exit" ) ) {
                 *pp++ = exit_program_op();
+            } else if( !strcmp( tok, "putc" ) ) {
+                *pp++ = putc_op();
             } else if( !strcmp( tok, "dup" ) ) {
                 *pp++ = dup_stack_op( make_data( U64, 1 ) );
             } else if(!strcmp(tok, "dup2") ) {

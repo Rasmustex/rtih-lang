@@ -22,7 +22,7 @@ void prep_jumping_commands( struct command *program, struct command **p ) {
 #define IF_STACK_SIZE 100
 
 void link_blocks( struct command *prog ) {
-    assert(NUM_OPS == 20 && "Unhandled operations in simulation mode - only need to add block ops here");
+    assert(NUM_OPS == 21 && "Unhandled operations in simulation mode - only need to add block ops here");
     char *find_func_by_pos( uint64_t pos );
     struct command *p = prog;
     uint64_t ifs[IF_STACK_SIZE];

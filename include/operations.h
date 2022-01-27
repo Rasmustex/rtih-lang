@@ -13,6 +13,7 @@ enum OP {
     OP_PLUS,
     OP_MINUS,
     OP_DUMP,
+    OP_PUTC,
     OP_EXIT,
     OP_EQ,
     OP_LT,
@@ -46,6 +47,7 @@ struct command push_op( data x );
 struct command plus_op( void );
 struct command minus_op( void );
 struct command dump_op( void );
+struct command putc_op( void );
 struct command exit_program_op( void );
 struct command eq_op( void );
 struct command lt_op( void );

@@ -13,6 +13,8 @@ void push( int argc, data args[10] );
 void plus();
 void minus();
 void dump();
+// prints lower 8 bits of whatever int you have - doesn't do floats or pointers
+void puttc();
 void exit_program();
 void eq();
 void lt();

@@ -7,11 +7,12 @@
 #include "../include/datatypes.h"
 
 void sim_setup_function_array( void (*op[NUM_OPS])( int argc, data args[10] ) ) {
-    assert(NUM_OPS == 20 && "Unhandled operations in simulation mode");
+    assert(NUM_OPS == 21 && "Unhandled operations in simulation mode");
     op[OP_PUSH]  = push;
     op[OP_PLUS]  = plus;
     op[OP_MINUS] = minus;
     op[OP_DUMP]  = dump;
+    op[OP_PUTC]  = puttc;
     op[OP_EXIT]  = exit_program;
     op[OP_EQ]    = eq;
     op[OP_LT]    = lt;
@@ -73,10 +74,29 @@ inline void dump( void ) {
         printf( "%g\n", temp.f );
         break;
     case U8:
+        printf( "%d\n", temp.c );
+        break;
+    default:
+        printf( "error: undumpable datatype: %d", temp.t );
+        break;
+    }
+    return;
+}
+
+inline void puttc( void ) {
+    register data temp = POP_SIM;
+    switch( temp.t ) {
+    case I64:
+        printf( "%c\n", temp.c );
+        break;
+    case U64:
+        printf( "%c\n", temp.c );
+        break;
+    case U8:
         printf( "%c", temp.c );
         break;
     default:
-        printf( "error: unprintable datatype: %d", temp.t );
+        printf( "error: %s cannot print datatype: %d", __func__, temp.t );
         break;
     }
     return;

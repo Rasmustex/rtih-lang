@@ -21,6 +21,7 @@ struct command plus_op( void )                   { return make_op( OP_PLUS, 0, N
 struct command minus_op( void )                  { return make_op( OP_MINUS, 0, NULL ); }
 // returns command with OP_DUMP
 struct command dump_op( void )                   { return make_op( OP_DUMP, 0, NULL ); }
+struct command putc_op( void )                   { return make_op( OP_PUTC, 0, NULL ); }
 // returns command with OP_EXIT
 struct command exit_program_op( void )           { return make_op( OP_EXIT, 0, NULL ); }
 // returns command with OP_EQ
