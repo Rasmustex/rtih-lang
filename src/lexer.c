@@ -1,4 +1,5 @@
 #include <ctype.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -6,6 +7,67 @@
 
 char tok[MAXTOK];
 int tt;
+
+// changes escaped escape characters such as \\n to \n in a string
+void unescape_characters( char *str, size_t len ) {
+    char *copy; // holds copy of str with escaped characters
+    char *s, c, *cop;
+    s = str;
+    if( !( copy = (char*)malloc( len ) ) ) {
+        printf( "Error allocating string memory in %s", __func__ );
+        exit(1);
+    }
+    cop = copy;
+
+    while( ( c = *s ) != '\0' ) {
+        if( c == '\\' ) {
+            switch( c = *++s ) {
+            case 'a':
+                *cop++ = '\a';
+                break;
+            case 'b':
+                *cop++ = '\b';
+                break;
+            case 'f':
+                *cop++ = '\f';
+                break;
+            case 'n':
+                *cop++ = '\n';
+                break;
+            case 'r':
+                *cop++ = '\r';
+                break;
+            case 't':
+                *cop++ = '\t';
+                break;
+            case 'v':
+                *cop++ = '\v';
+                break;
+            case '\\':
+                *cop++ = '\\';
+                break;
+            case '\?':
+                *cop++ = '\?';
+                break;
+            case '\'':
+                *cop++ = '\'';
+                break;
+            case '\"':
+                *cop++ = '\"';
+                break;
+            default:
+                break;
+            }
+        } else {
+            *cop++ = c;
+        }
+        ++s;
+    }
+    *cop = '\0';
+    strncpy( str, copy, len );
+    free( copy );
+    return;
+}
 
 enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount ) {
     char *p = tok;
@@ -66,6 +128,7 @@ enum TOK_TYPE tokenize( FILE *f, uint64_t *linecount ) {
         for( ; (c = fgetc(f)) != EOF && c != '\'' && p - tok < MAXTOK; *p++ = c )
             ;
         *p++ = '\0';
+        unescape_characters( tok, MAXTOK );
         if( c == '\'' )
             return tt = CHAR;
         else

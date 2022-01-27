@@ -69,11 +69,7 @@ struct command *read_program_from_file( const char *fname ) {
                 printf( "%s:%lu: '%s' error: cannot declare multiple character char\n", fname, lineno, tok );
                 exit(1);
             }
-            if( !strcmp( tok, "\\n") ) {
-                *pp++ = push_op( make_data( U8, '\n' ) );
-            } else {
-                *pp++ = push_op( make_data( U8, tok[0] ) );
-            }
+            *pp++ = push_op( make_data( U8, tok[0] ) );
             break;
         case '+':
             *pp++ = plus_op();
