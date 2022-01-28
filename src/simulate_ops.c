@@ -87,11 +87,7 @@ inline void puttc( void ) {
     register data temp = POP_SIM;
     switch( temp.t ) {
     case I64:
-        printf( "%c\n", temp.c );
-        break;
     case U64:
-        printf( "%c\n", temp.c );
-        break;
     case U8:
         printf( "%c", temp.c );
         break;
